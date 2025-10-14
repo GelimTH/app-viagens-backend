@@ -1,0 +1,68 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  fullName  String
+  password  String
+  role      String   @default("colaborador")
+
+  // Relacionamentos
+  profile   Profile?
+  viagens   Viagem[] // REATIVE ESTA LINHA
+}
+
+model Profile {
+  id                 Int     @id @default(autoincrement())
+  cargo              String?
+  departamento       String?
+  centroCustoPadrao  String?
+  matricula          String?
+  telefone           String?
+  user               User    @relation(fields: [userId], references: [id])
+  userId             Int     @unique
+}
+
+model Viagem {
+  id                    Int      @id @default(autoincrement())
+  destino               String
+  origem                String
+  dataIda               DateTime @db.DateTime(0) // Adicione aqui
+  dataVolta             DateTime @db.DateTime(0) // Adicione aqui
+  motivo                String
+  status                String
+  valorEstimado         Float?
+  tipoTransporte        String?
+  necessitaHospedagem   Boolean  @default(false)
+
+  colaboradorId         Int
+  colaborador           User     @relation(fields: [colaboradorId], references: [id])
+  despesas              Despesa[]
+}
+
+model Despesa {
+  id              Int      @id @default(autoincrement())
+  tipo            String
+  valor           Float
+  data            DateTime @db.DateTime(0) // Adicione aqui
+  descricao       String?
+  notaFiscalUrl   String?
+  status          String   @default("pendente")
+
+  viagemId        Int
+  viagem          Viagem   @relation(fields: [viagemId], references: [id])
+}
