@@ -1,9 +1,4 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
+// [adv-back.md] / prisma/schema.prisma
 
 generator client {
   provider = "prisma-client-js"
@@ -14,55 +9,100 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model User {
-  id        Int      @id @default(autoincrement())
-  email     String   @unique
-  fullName  String
-  password  String
-  role      String   @default("colaborador")
+// 1. ATUALIZAMOS O "ROLE" PARA INCLUIR VISITANTE
+enum Role {
+  COLABORADOR
+  GESTOR
+  ASSESSOR_DIRETOR
+  DESENVOLVEDOR
+  VISITANTE
+}
 
-  // Relacionamentos
-  profile   Profile?
-  viagens   Viagem[] // REATIVE ESTA LINHA
+model User {
+  id       Int      @id @default(autoincrement())
+  email    String   @unique
+  fullName String
+  password String
+  role     Role     @default(COLABORADOR)
+
+  // Relações
+  profile          Profile?          // Perfil do Colaborador
+  viagens          Viagem[]          // Viagens criadas por este colaborador
+  convite        ConviteVisitante? // O convite que este visitante usou
+  profileVisitante ProfileVisitante? // O perfil deste visitante
 }
 
 model Profile {
-  id                 Int     @id @default(autoincrement())
-  cargo              String?
-  departamento       String?
-  centroCustoPadrao  String?
-  matricula          String?
-  telefone           String?
-  user               User    @relation(fields: [userId], references: [id])
-  userId             Int     @unique
+  id                Int     @id @default(autoincrement())
+  cargo             String?
+  departamento      String?
+  centroCustoPadrao String?
+  matricula         String?
+  telefone          String?
+  user              User    @relation(fields: [userId], references: [id])
+  userId            Int     @unique
 }
 
+// 2. ADICIONAMOS A RELAÇÃO DE "CONVITES"
 model Viagem {
-  id                    Int      @id @default(autoincrement())
-  destino               String
-  origem                String
-  dataIda               DateTime @db.DateTime(0) // Adicione aqui
-  dataVolta             DateTime @db.DateTime(0) // Adicione aqui
-  motivo                String
-  status                String
-  valorEstimado         Float?
-  tipoTransporte        String?
-  necessitaHospedagem   Boolean  @default(false)
-
-  colaboradorId         Int
-  colaborador           User     @relation(fields: [colaboradorId], references: [id])
-  despesas              Despesa[]
+  id                  Int      @id @default(autoincrement())
+  destino             String
+  origem              String
+  dataIda             DateTime @db.DateTime(0)
+  dataVolta           DateTime @db.DateTime(0)
+  motivo              String
+  status              String
+  valorEstimado       Float?   @db.Double
+  tipoTransporte      String?
+  necessitaHospedagem Boolean  @default(false)
+  
+  colaboradorId       Int
+  colaborador         User     @relation(fields: [colaboradorId], references: [id])
+  
+  despesas            Despesa[]
+  convites            ConviteVisitante[] // Relação 1-para-Muitos com Convites
 }
 
 model Despesa {
-  id              Int      @id @default(autoincrement())
-  tipo            String
-  valor           Float
-  data            DateTime @db.DateTime(0) // Adicione aqui
-  descricao       String?
-  notaFiscalUrl   String?
-  status          String   @default("pendente")
+  id                   Int      @id @default(autoincrement())
+  tipo                 String
+  valor                Float    @db.Double
+  data                 DateTime @db.DateTime(0)
+  descricao            String?
+  notaFiscalUrl        String?
+  comprovanteImagemUrl String? // <-- Verifique se você adicionou isso no passo anterior
+  status               String   @default("pendente")
+  
+  viagemId             Int
+  viagem               Viagem   @relation(fields: [viagemId], references: [id])
+}
 
-  viagemId        Int
-  viagem          Viagem   @relation(fields: [viagemId], references: [id])
+// 3. ADICIONAMOS A NOVA TABELA DE CONVITES
+model ConviteVisitante {
+  id        Int      @id @default(autoincrement())
+  token     String   @unique
+  email     String   // <-- @unique REMOVIDO
+  cpf       String   // <-- @unique REMOVIDO
+  foiUsado  Boolean  @default(false)
+  
+  viagem    Viagem   @relation(fields: [viagemId], references: [id])
+  viagemId  Int
+
+  visitanteUser   User?    @relation(fields: [visitanteUserId], references: [id])
+  visitanteUserId Int?     @unique
+}
+
+// 4. ADICIONAMOS A NOVA TABELA DE PERFIL DE VISITANTE
+model ProfileVisitante {
+  id                Int       @id @default(autoincrement())
+  documento         String?   // CPF, RG ou Passaporte
+  dataNascimento    DateTime? @db.Date
+  telefone          String?
+  alergias          String?   @db.Text
+  condicoesMedicas  String?   @db.Text
+  contatoEmergencia String?   // Ex: "Maria (mãe) - (11) 99999-9999"
+
+  // Relação 1-para-1 com o User
+  user              User      @relation(fields: [userId], references: [id])
+  userId            Int       @unique
 }

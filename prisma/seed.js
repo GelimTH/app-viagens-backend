@@ -20,9 +20,8 @@ async function main() {
     data: {
       email: 'colaborador@empresa.com',
       fullName: 'João Colaborador',
-      // 2. AGORA SALVAMOS A SENHA CRIPTOGRAFADA
       password: bcrypt.hashSync('senha123', 8), 
-      role: 'colaborador',
+      role: 'COLABORADOR',
       profile: {
         create: {
           cargo: 'Analista de Projetos',

@@ -6,6 +6,16 @@ import 'dotenv/config';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 
+// Novas importações para upload
+import multer from 'multer';
+import { nanoid } from 'nanoid';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import fs from 'fs';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const app = express();
 const prisma = new PrismaClient();
 const PORT = process.env.PORT || 3001;
@@ -13,17 +23,94 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
+const authenticateToken = async (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1]; // Pega o token "Bearer <token>"
+
+  if (token == null) {
+    return res.sendStatus(401); // 401 Unauthorized
+  }
+
+  try {
+    const payload = jwt.verify(token, process.env.JWT_SECRET);
+
+    // Busca o usuário no banco com o ID que estava no token
+    const user = await prisma.user.findUnique({
+      where: { id: payload.userId },
+      include: { profile: true }, // Inclui o perfil
+    });
+
+    if (!user) {
+      return res.sendStatus(403); // 403 Forbidden
+    }
+
+    req.user = user; // Anexa o objeto do usuário na requisição
+    next(); // Passa para a próxima rota
+  } catch (err) {
+    console.error("Erro de token:", err.message);
+    return res.sendStatus(403); // 403 Forbidden (token inválido)
+  }
+};
+
+const authorizeRole = (rolesPermitidas) => {
+  return (req, res, next) => {
+    const userRole = req.user.role;
+    if (rolesPermitidas.includes(userRole)) {
+      next(); // Usuário tem a permissão, continue
+    } else {
+      res.status(403).json({ error: 'Acesso negado. Você não tem permissão para esta ação.' });
+    }
+  };
+};
+
+// Servir arquivos estáticos da pasta de uploads
+app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
+
+// Configuração do Multer (onde salvar os arquivos)
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    // Cria a pasta se não existir
+    const uploadPath = 'public/uploads/';
+    fs.mkdirSync(uploadPath, { recursive: true });
+    cb(null, uploadPath);
+  },
+  filename: function (req, file, cb) {
+    // Garante um nome de arquivo único
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+const upload = multer({ storage: storage });
+
+
+// --- NOVA ROTA DE UPLOAD ---
+app.post('/api/upload', upload.single('file'), (req, res) => {
+  if (!req.file) {
+    return res.status(400).send('Nenhum arquivo foi enviado.');
+  }
+  const fileUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+  res.status(200).json({ fileUrl });
+});
+
 // --- ROTAS DE AUTENTICAÇÃO ---
 app.post('/api/auth/register', async (req, res) => {
   const { email, password, fullName } = req.body;
   const hashedPassword = bcrypt.hashSync(password, 8);
 
   try {
+    // 1. Verifica se já existe algum usuário no banco
+    const userCount = await prisma.user.count();
+
+    // 2. Define o role: se for o primeiro (contagem 0), é DEV, senão é Colaborador
+    // (O Prisma aceita a string, desde que ela seja um valor válido do enum)
+    const userRole = userCount === 0 ? 'DESENVOLVEDOR' : 'COLABORADOR';
+
     const user = await prisma.user.create({
       data: {
         email,
         fullName,
         password: hashedPassword,
+        role: userRole, // 3. Usa o role dinâmico
       },
     });
     res.status(201).json({ message: "Usuário criado com sucesso!" });
@@ -31,7 +118,84 @@ app.post('/api/auth/register', async (req, res) => {
     if (error.code === 'P2002') {
       return res.status(409).json({ error: "Este email já está em uso." });
     }
+    console.error("Erro ao registrar usuário:", error);
     res.status(500).json({ error: "Não foi possível registrar o usuário." });
+  }
+});
+
+app.post('/api/auth/visitante/register', async (req, res) => {
+  const {
+    token, email, cpf, fullName, password, // Dados do User
+    documento, dataNascimento, telefone, // Dados do ProfileVisitante
+    alergias, condicoesMedicas, contatoEmergencia
+  } = req.body;
+
+  if (!token || !email || !cpf || !fullName || !password) {
+    return res.status(400).json({ error: 'Campos de validação e de conta são obrigatórios.' });
+  }
+
+  try {
+    // 1. Encontra o convite pelo token (que é único)
+    const convite = await prisma.conviteVisitante.findUnique({
+      where: { token: token }
+    });
+
+    // 2. Faz a verificação de segurança
+    if (!convite || convite.foiUsado) {
+      return res.status(403).json({ error: 'Convite inválido ou já utilizado.' });
+    }
+    if (convite.email !== email || convite.cpf !== cpf) {
+      return res.status(403).json({ error: 'Os dados (Email ou CPF) não correspondem ao convite.' });
+    }
+
+    // 3. Verifica se o email já está em uso por outro usuário
+    const usuarioExistente = await prisma.user.findUnique({ where: { email } });
+    if (usuarioExistente) {
+      return res.status(409).json({ error: "Este email já está em uso." });
+    }
+
+    // 4. Se passou em tudo, cria o usuário e o perfil em uma transação
+    const hashedPassword = bcrypt.hashSync(password, 8);
+
+    await prisma.$transaction(async (tx) => {
+      // a. Cria o Usuário
+      const novoUsuario = await tx.user.create({
+        data: {
+          email,
+          fullName,
+          password: hashedPassword,
+          role: 'VISITANTE', // Define o role
+        }
+      });
+
+      // b. Cria o Perfil do Visitante
+      await tx.profileVisitante.create({
+        data: {
+          userId: novoUsuario.id,
+          documento: documento || null,
+          dataNascimento: dataNascimento ? new Date(dataNascimento) : null,
+          telefone: telefone || null,
+          alergias: alergias || null,
+          condicoesMedicas: condicoesMedicas || null,
+          contatoEmergencia: contatoEmergencia || null,
+        }
+      });
+
+      // c. Atualiza o convite como "usado" e liga ao novo usuário
+      await tx.conviteVisitante.update({
+        where: { id: convite.id },
+        data: {
+          foiUsado: true,
+          visitanteUserId: novoUsuario.id
+        }
+      });
+    });
+
+    res.status(201).json({ message: "Conta de visitante criada com sucesso!" });
+
+  } catch (error) {
+    console.error("Erro no registro de visitante:", error);
+    res.status(500).json({ error: "Não foi possível registrar o visitante." });
   }
 });
 
@@ -52,38 +216,77 @@ app.post('/api/auth/login', async (req, res) => {
   const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, {
     expiresIn: '1d',
   });
-  
+
   const { password: _, ...userWithoutPassword } = user;
 
   res.json({ user: userWithoutPassword, token });
 });
 
-app.get('/api/auth/me', async (req, res) => {
-  try {
-    const user = await prisma.user.findFirst({
-      include: { profile: true },
-    });
-    res.json(user);
-  } catch (error) {
-    res.status(500).json({ error: 'Usuário não encontrado.' });
-  }
+// Agora esta rota é protegida e retorna o usuário logado
+app.get('/api/auth/me', authenticateToken, async (req, res) => {
+  // O middleware 'authenticateToken' já buscou o usuário
+  // e o colocou em 'req.user'.
+  // Apenas retornamos ele.
+  res.json(req.user);
 });
+
+app.get(
+  '/api/visitante/minha-viagem',
+  authenticateToken, // 1. Protege a rota, temos o req.user
+  authorizeRole(['VISITANTE']), // 2. Só visitantes podem acessar
+  async (req, res) => {
+    try {
+      // 3. Busca o usuário (visitante) logado
+      const usuario = await prisma.user.findUnique({
+        where: { id: req.user.id },
+        include: {
+          profileVisitante: true, // Inclui o perfil de saúde
+          convite: { // Inclui o convite que ele usou
+            include: {
+              viagem: { // Inclui a viagem associada ao convite
+                include: {
+                  colaborador: true, // Inclui o gestor que criou a viagem
+                },
+              },
+            },
+          },
+        },
+      });
+
+      if (!usuario || !usuario.convite || !usuario.convite.viagem) {
+        return res.status(404).json({ error: 'Viagem não encontrada para este visitante.' });
+      }
+
+      // 4. Retorna os dados que a página precisa
+      res.json({
+        viagem: usuario.convite.viagem,
+        perfil: usuario.profileVisitante,
+        gestor: usuario.convite.viagem.colaborador, // O colaborador da viagem é o gestor
+      });
+
+    } catch (error) {
+      console.error("Erro ao buscar dados do visitante:", error);
+      res.status(500).json({ error: 'Ocorreu um erro ao buscar os dados da viagem.' });
+    }
+  }
+);
 
 
 // --- ROTAS DE VIAGEM (CRUD) ---
 
 // CREATE (Criar uma nova viagem)
-app.post('/api/viagens', async (req, res) => {
+app.post('/api/viagens', authenticateToken, async (req, res) => { // <-- Middleware adicionado
   try {
-    const colaboradorId = 5; // TODO: No futuro, pegar o ID do usuário logado (JWT)
-    
+    // O "futuro" chegou! Pegamos o ID do usuário logado (que veio do middleware)
+    const colaboradorId = req.user.id;
+
     const dadosDaViagem = {
       origem: req.body.origem,
       destino: req.body.destino,
       motivo: req.body.motivo,
       dataIda: new Date(req.body.data_ida),
       dataVolta: new Date(req.body.data_volta),
-      colaboradorId: colaboradorId,
+      colaboradorId: colaboradorId, // <-- ID dinâmico
       status: 'em_analise'
     };
 
@@ -166,16 +369,84 @@ app.delete('/api/viagens/:id', async (req, res) => {
   }
 });
 
+// ADICIONE ESTA NOVA ROTA PARA CONVIDAR VISITANTES
+app.post(
+  '/api/viagens/:id/convidar',
+  authenticateToken, // 1. Protege a rota
+  authorizeRole(['GESTOR', 'ASSESSOR_DIRETOR', 'DESENVOLVEDOR']), // 2. Só Gestor/Assessor/Dev podem convidar
+  async (req, res) => {
+    const { id: viagemId } = req.params;
+    const { email, cpf } = req.body;
+
+    if (!email || !cpf) {
+      return res.status(400).json({ error: 'Email e CPF são obrigatórios.' });
+    }
+
+    try {
+      // 1. Verifica se a viagem existe
+      const viagem = await prisma.viagem.findUnique({ where: { id: Number(viagemId) } });
+      if (!viagem) {
+        return res.status(404).json({ error: 'Viagem não encontrada.' });
+      }
+
+      // 2. Verifica se já existe um convite para esse email ou CPF
+      const conviteExistente = await prisma.conviteVisitante.findFirst({
+        where: { OR: [{ email }, { cpf }] }
+      });
+      if (conviteExistente) {
+        return res.status(409).json({ error: 'Já existe um convite para este email ou CPF.' });
+      }
+
+      // 3. Gera um token único (ex: 'WkYq9E-4P2a_25-HS1-tP')
+      const token = nanoid(21);
+
+      // 4. Cria o convite no banco
+      const novoConvite = await prisma.conviteVisitante.create({
+        data: {
+          token: token,
+          email: email,
+          cpf: cpf,
+          viagemId: Number(viagemId),
+        }
+      });
+
+      res.status(201).json(novoConvite); // Retorna o convite criado
+
+    } catch (error) {
+      console.error("Erro ao criar convite:", error);
+      res.status(500).json({ error: 'Ocorreu um erro ao criar o convite.' });
+    }
+  }
+);
+
+app.get(
+  '/api/viagens/:id/convites',
+  authenticateToken, // Protege a rota
+  authorizeRole(['GESTOR', 'ASSESSOR_DIRETOR', 'DESENVOLVEDOR']), // Protege por role
+  async (req, res) => {
+    const { id: viagemId } = req.params;
+
+    try {
+      const convites = await prisma.conviteVisitante.findMany({
+        where: { viagemId: Number(viagemId) },
+        orderBy: { email: 'asc' } // Ordena por email
+      });
+      res.json(convites);
+    } catch (error) {
+      console.error("Erro ao buscar convites:", error);
+      res.status(500).json({ error: 'Ocorreu um erro ao buscar os convites.' });
+    }
+  }
+);
+
 
 // --- ROTAS DE DESPESA (CRUD) ---
-
-// CREATE (Adicionar uma nova despesa a uma viagem)
 app.post('/api/despesas', async (req, res) => {
   try {
-    const { viagem_id, tipo, valor, data, descricao } = req.body;
+    const { viagem_id, tipo, valor, data, descricao, notaFiscalUrl, comprovanteImagemUrl } = req.body;
 
     if (!viagem_id || !tipo || !valor || !data) {
-        return res.status(400).json({ error: 'Campos obrigatórios faltando.' });
+      return res.status(400).json({ error: 'Campos obrigatórios faltando.' });
     }
 
     const novaDespesa = await prisma.despesa.create({
@@ -185,7 +456,9 @@ app.post('/api/despesas', async (req, res) => {
         data: new Date(data),
         descricao,
         viagemId: viagem_id,
-        status: 'pendente'
+        notaFiscalUrl: notaFiscalUrl,
+        status: 'pendente',
+        comprovanteImagemUrl: comprovanteImagemUrl,
       }
     });
     res.status(201).json(novaDespesa);
@@ -241,24 +514,70 @@ app.get('/api/despesas/pendentes', async (req, res) => {
   }
 });
 
+// READ (Encontrar uma despesa por ID) - ROTA FALTANTE
+app.get('/api/despesas/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const despesa = await prisma.despesa.findUnique({
+      where: { id: Number(id) },
+    });
+
+    if (!despesa) {
+      return res.status(404).json({ error: 'Despesa não encontrada.' });
+    }
+
+    res.json(despesa);
+  } catch (error) {
+    console.error("Erro ao buscar despesa:", error);
+    res.status(500).json({ error: 'Ocorreu um erro ao buscar a despesa.' });
+  }
+});
+
+
+// ==================================================================
+// ADICIONE ESTE BLOCO PARA O ERRO DE "EXCLUIR" (DELETE)
+// ==================================================================
+// DELETE (Apagar uma despesa por ID) - ROTA FALTANTE
+app.delete('/api/despesas/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await prisma.despesa.delete({
+      where: { id: Number(id) },
+    });
+    res.status(204).send(); // 204 significa "No Content" (sucesso, sem corpo)
+  } catch (error) {
+    console.error("Erro ao apagar despesa:", error);
+    // Adiciona verificação para "Record not found" (P2025 no Prisma)
+    if (error.code === 'P2025') {
+      return res.status(404).json({ error: 'Despesa não encontrada para deletar.' });
+    }
+    res.status(500).json({ error: 'Ocorreu um erro ao apagar a despesa.' });
+  }
+});
+
 // UPDATE (Aprovar ou reprovar uma despesa)
 app.patch('/api/despesas/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { status } = req.body; // Só precisamos do status
+    const dadosParaAtualizar = req.body;
 
-    if (!status) {
-      return res.status(400).json({ error: 'O novo status é obrigatório.' });
+    // Se a data for enviada, converte para o formato Date
+    if (dadosParaAtualizar.data) {
+      dadosParaAtualizar.data = new Date(dadosParaAtualizar.data);
     }
 
     const despesaAtualizada = await prisma.despesa.update({
       where: { id: Number(id) },
-      data: { status },
+      data: dadosParaAtualizar,
     });
 
     res.json(despesaAtualizada);
   } catch (error) {
     console.error("Erro ao atualizar despesa:", error);
+    // Adiciona verificação para "Record not found" (P2025 no Prisma)
+    if (error.code === 'P2025') {
+      return res.status(404).json({ error: 'Despesa não encontrada para atualizar.' });
+    }
     res.status(500).json({ error: 'Ocorreu um erro ao atualizar a despesa.' });
   }
 });
@@ -270,9 +589,9 @@ app.post('/api/chatbot/ask', async (req, res) => {
   const texto = pergunta.toLowerCase();
 
   try {
-    const colaboradorId = 5; // ID fixo para o protótipo
+    const colaboradorId = 5;
 
-    let resposta = "Desculpe, não entendi sua pergunta. Você pode perguntar sobre 'status das viagens', 'nova viagem' ou 'política de despesas'.";
+    let resposta = "Perdão, poderia ser mais especifico? Você pode perguntar sobre 'status das viagens', 'nova viagem' ou 'política de despesas'.";
 
     if (texto.includes('status') || texto.includes('minhas viagens')) {
       const viagens = await prisma.viagem.findMany({
@@ -283,21 +602,32 @@ app.post('/api/chatbot/ask', async (req, res) => {
       if (viagens.length === 0) {
         resposta = "Você não tem nenhuma viagem registrada no momento.";
       } else {
-        const statusList = viagens.map(v => `- Viagem para ${v.destino}: ${v.status}`).join('\n');
+        // MUDANÇA AQUI: Mapeamento de status para um texto mais amigável
+        const statusMap = {
+          em_analise: 'Em Análise 🟠',
+          aprovado: 'Aprovado ✅',
+          reprovado: 'Reprovado ❌',
+        };
+
+        // Usamos o mapa para formatar a lista
+        const statusList = viagens
+          .map(v => `- Viagem para ${v.destino}: ${statusMap[v.status] || v.status}`)
+          .join('\n');
+
         resposta = `Claro! Aqui está o status das suas viagens:\n${statusList}`;
       }
-    } 
+    }
     else if (texto.includes('nova') && texto.includes('viagem')) {
-        resposta = "Para criar uma nova viagem, clique no menu 'Nova Viagem' ao lado ou no botão azul no topo do Dashboard. ✨";
-    } 
+      resposta = "Para criar uma nova viagem, clique no menu 'Nova Viagem' ao lado ou no botão azul no topo do Dashboard. ✨";
+    }
     else if (texto.includes('política') || texto.includes('regras') || texto.includes('despesa')) {
-        resposta = "Nossa política de viagens corporativas permite um adiantamento de até R$ 500,00. As despesas com alimentação têm um teto diário de R$ 120,00. Lembre-se de guardar todos os comprovantes!";
+      resposta = "Nossa política de viagens corporativas permite um adiantamento de até R$ 500,00. As despesas com alimentação têm um teto diário de R$ 120,00. Lembre-se de guardar todos os comprovantes!";
     }
     else if (texto.includes('ajuda') || texto.includes('socorro')) {
-        resposta = "Estou aqui para ajudar! Você pode me perguntar sobre o status das suas viagens, como criar uma nova solicitação ou sobre as políticas de despesas da empresa.";
+      resposta = "Estou aqui para ajudar! Você pode me perguntar sobre o status das suas viagens, como criar uma nova solicitação ou sobre as políticas de despesas da empresa.";
     }
     else if (texto.includes('oi') || texto.includes('olá') || texto.includes('bom dia')) {
-        resposta = "Olá! 👋 Como posso te ajudar com suas viagens hoje?";
+      resposta = "Olá! 👋 Como posso te ajudar com suas viagens hoje?";
     }
 
     res.json({ resposta });
