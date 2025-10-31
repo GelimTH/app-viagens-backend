@@ -20,7 +20,12 @@ const app = express();
 const prisma = new PrismaClient();
 const PORT = process.env.PORT || 3001;
 
-app.use(cors());
+const corsOptions = {
+    origin: 'https://embarquecoracaoazul.online',
+    credentials: true, 
+};
+
+app.use(cors(corsOptions)); // <--- Aplica a nova configuração
 app.use(express.json());
 
 const authenticateToken = async (req, res, next) => {
