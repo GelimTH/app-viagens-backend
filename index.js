@@ -24,7 +24,7 @@ const allowedOrigins = [
   'https://embarquecoracaoazul.online',
   'https://www.embarquecoracaoazul.online',
   'http://localhost:5173', // Para desenvolvimento local
-  // Adicione a URL temporária do Render aqui (ex: https://adv-api-xxxx.onrender.com)
+  'https://adv-api-7c96.onrender.com',
   process.env.RENDER_EXTERNAL_URL
 ].filter(Boolean);
 
