@@ -6,7 +6,7 @@
   "scripts": {
   "test": "echo \"Error: no test specified\" && exit 1",
   "dev": "prisma generate && nodemon index.js",
-  "start": "node index.js"
+  "start": "prisma migrate deploy && node index.js"
 },
   "prisma": {
     "seed": "node prisma/seed.js"
