@@ -48,11 +48,11 @@ model Viagem {
   id                  Int      @id @default(autoincrement())
   destino             String
   origem              String
-  dataIda             DateTime @db.DateTime(0)
-  dataVolta           DateTime @db.DateTime(0)
+  dataIda             DateTime //@db.DateTime(0)
+  dataVolta           DateTime //@db.DateTime(0)
   motivo              String
   status              String
-  valorEstimado       Float?   @db.Double
+  valorEstimado       Float?   //@db.Double
   tipoTransporte      String?
   necessitaHospedagem Boolean  @default(false)
   
@@ -66,8 +66,8 @@ model Viagem {
 model Despesa {
   id                   Int      @id @default(autoincrement())
   tipo                 String
-  valor                Float    @db.Double
-  data                 DateTime @db.DateTime(0)
+  valor                Float    //@db.Double
+  data                 DateTime //@db.DateTime(0)
   descricao            String?
   notaFiscalUrl        String?
   comprovanteImagemUrl String? // <-- Verifique se você adicionou isso no passo anterior
