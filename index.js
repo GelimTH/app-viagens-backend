@@ -13,6 +13,15 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
 
+// ----- CÓDIGO DE DEBUG (TEMPORÁRIO) -----
+if (process.env.DATABASE_URL) {
+  console.log("✅ DATABASE_URL foi carregada.");
+  console.log("Host (Render):", new URL(process.env.DATABASE_URL).hostname);
+} else {
+  console.error("❌ ERRO: DATABASE_URL não encontrada no process.env!");
+}
+// ----- FIM DO CÓDIGO DE DEBUG -----
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
