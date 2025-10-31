@@ -20,39 +20,26 @@ const app = express();
 const prisma = new PrismaClient();
 const PORT = process.env.PORT || 3001;
 
-// Seu domínio final na Vercel
-const ALLOWED_ORIGIN_1 = 'https://embarquecoracaoazul.online';
-
-// O endereço que a Vercel usa para pré-visualizações
-const ALLOWED_ORIGIN_2 = 'https://vercel.app'; 
-
-// O endereço de desenvolvimento (opcional, mas bom ter)
-const ALLOWED_ORIGIN_3 = 'http://localhost:5173';
-
-// O endereço público do seu BACKEND no Render (EX: https://adv-api-xxxx.onrender.com)
-// Use este se você configurar seu front-end para chamar essa URL de fallback!
-const ALLOWED_ORIGIN_4 = process.env.RENDER_EXTERNAL_URL;
-
 const allowedOrigins = [
-  ALLOWED_ORIGIN_1,
-  'https://www.embarquecoracaoazul.online', // Para garantir o subdomínio www
-  ALLOWED_ORIGIN_2,
-  ALLOWED_ORIGIN_3,
-  ALLOWED_ORIGIN_4
+  'https://embarquecoracaoazul.online',
+  'https://www.embarquecoracaoazul.online',
+  'http://localhost:5173', // Para desenvolvimento local
+  // Adicione a URL temporária do Render aqui (ex: https://adv-api-xxxx.onrender.com)
+  process.env.RENDER_EXTERNAL_URL
 ].filter(Boolean);
 
 const corsOptions = {
     origin: function (origin, callback) {
-      // Permite requisições sem `origin` (como apps mobile ou curl) e as permitidas
+      // Permite se a origem estiver na lista ou se for uma requisição de servidor (sem 'origin')
       if (!origin || allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
-        // Log para debug
-        console.error('CORS BLOCKED:', origin, 'Not in allowed list.');
+        // Log para debug no servidor
+        console.error('CORS BLOCKED:', origin);
         callback(new Error('Not allowed by CORS'));
       }
     },
-    credentials: true, 
+    credentials: true, // Importante para o envio do token JWT
 };
 
 app.use(cors(corsOptions));
