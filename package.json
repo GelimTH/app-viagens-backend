@@ -4,10 +4,11 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-  "test": "echo \"Error: no test specified\" && exit 1",
-  "dev": "prisma generate && nodemon index.js",
-  "start": "prisma migrate deploy && node index.js"
-},
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "prisma generate && nodemon index.js",
+    "build": "prisma generate",
+    "start": "prisma migrate deploy && node index.js"
+  },
   "prisma": {
     "seed": "node prisma/seed.js"
   },
