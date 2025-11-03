@@ -20,7 +20,7 @@ async function main() {
     data: {
       email: 'colaborador@empresa.com',
       fullName: 'João Colaborador',
-      password: bcrypt.hashSync('senha123', 8), 
+      password: bcrypt.hashSync('senha123', 8),
       role: 'COLABORADOR',
       profile: {
         create: {
@@ -40,6 +40,35 @@ async function main() {
       motivo: 'Reunião com cliente importante',
       status: 'aprovado',
       colaboradorId: usuario1.id,
+      eventos: {
+        create: [
+          {
+            titulo: 'Voo de Ida (CGB-GIG)',
+            tipo: 'voo',
+            dataHoraInicio: new Date('2025-11-10T09:00:00.000Z'),
+            local: 'Aeroporto de Congonhas (CGH)',
+          },
+          {
+            titulo: 'Check-in Hotel Copacabana',
+            tipo: 'hotel',
+            dataHoraInicio: new Date('2025-11-10T12:00:00.000Z'),
+            local: 'Hotel Copacabana Palace',
+          },
+          {
+            titulo: 'Reunião com Cliente XYZ',
+            tipo: 'reuniao',
+            dataHoraInicio: new Date('2025-11-10T14:30:00.000Z'),
+            descricao: 'Alinhamento estratégico do Projeto Alfa.',
+            local: 'Escritório Cliente XYZ - Av. Atlântica',
+          },
+          {
+            titulo: 'Voo de Volta (GIG-CGB)',
+            tipo: 'voo',
+            dataHoraInicio: new Date('2025-11-15T18:00:00.000Z'),
+            local: 'Aeroporto Galeão (GIG)',
+          },
+        ]
+      }
     },
   });
 

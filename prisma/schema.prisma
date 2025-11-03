@@ -19,16 +19,16 @@ enum Role {
 }
 
 model User {
-  id       Int      @id @default(autoincrement())
-  email    String   @unique
+  id       Int    @id @default(autoincrement())
+  email    String @unique
   fullName String
   password String
-  role     Role     @default(COLABORADOR)
+  role     Role   @default(COLABORADOR)
 
   // Relações
-  profile          Profile?          // Perfil do Colaborador
-  viagens          Viagem[]          // Viagens criadas por este colaborador
-  convite        ConviteVisitante? // O convite que este visitante usou
+  profile          Profile? // Perfil do Colaborador
+  viagens          Viagem[] // Viagens criadas por este colaborador
+  convite          ConviteVisitante? // O convite que este visitante usou
   profileVisitante ProfileVisitante? // O perfil deste visitante
 }
 
@@ -52,57 +52,81 @@ model Viagem {
   dataVolta           DateTime //@db.DateTime(0)
   motivo              String
   status              String
-  valorEstimado       Float?   //@db.Double
+  valorEstimado       Float? //@db.Double
   tipoTransporte      String?
   necessitaHospedagem Boolean  @default(false)
-  
-  colaboradorId       Int
-  colaborador         User     @relation(fields: [colaboradorId], references: [id])
-  
-  despesas            Despesa[]
-  convites            ConviteVisitante[] // Relação 1-para-Muitos com Convites
+
+  colaboradorId Int
+  colaborador   User @relation(fields: [colaboradorId], references: [id])
+
+  despesas Despesa[]
+  convites ConviteVisitante[]
+  eventos  EventoTimeline[]
 }
 
 model Despesa {
   id                   Int      @id @default(autoincrement())
   tipo                 String
-  valor                Float    //@db.Double
+  valor                Float //@db.Double
   data                 DateTime //@db.DateTime(0)
   descricao            String?
   notaFiscalUrl        String?
   comprovanteImagemUrl String? // <-- Verifique se você adicionou isso no passo anterior
   status               String   @default("pendente")
-  
-  viagemId             Int
-  viagem               Viagem   @relation(fields: [viagemId], references: [id])
+
+  viagemId Int
+  viagem   Viagem @relation(fields: [viagemId], references: [id])
+
+  eventoTimelineId Int?
+  eventoTimeline   EventoTimeline? @relation("EventoDespesas", fields: [eventoTimelineId], references: [id])
+
+  @@index([viagemId])
+  @@index([eventoTimelineId])
 }
 
 // 3. ADICIONAMOS A NOVA TABELA DE CONVITES
 model ConviteVisitante {
-  id        Int      @id @default(autoincrement())
-  token     String   @unique
-  email     String   // <-- @unique REMOVIDO
-  cpf       String   // <-- @unique REMOVIDO
-  foiUsado  Boolean  @default(false)
-  
-  viagem    Viagem   @relation(fields: [viagemId], references: [id])
-  viagemId  Int
+  id       Int     @id @default(autoincrement())
+  token    String  @unique
+  email    String // <-- @unique REMOVIDO
+  cpf      String // <-- @unique REMOVIDO
+  foiUsado Boolean @default(false)
 
-  visitanteUser   User?    @relation(fields: [visitanteUserId], references: [id])
-  visitanteUserId Int?     @unique
+  viagem   Viagem @relation(fields: [viagemId], references: [id])
+  viagemId Int
+
+  visitanteUser   User? @relation(fields: [visitanteUserId], references: [id])
+  visitanteUserId Int?  @unique
 }
 
 // 4. ADICIONAMOS A NOVA TABELA DE PERFIL DE VISITANTE
 model ProfileVisitante {
   id                Int       @id @default(autoincrement())
-  documento         String?   // CPF, RG ou Passaporte
+  documento         String? // CPF, RG ou Passaporte
   dataNascimento    DateTime? @db.Date
   telefone          String?
   alergias          String?   @db.Text
   condicoesMedicas  String?   @db.Text
-  contatoEmergencia String?   // Ex: "Maria (mãe) - (11) 99999-9999"
+  contatoEmergencia String? // Ex: "Maria (mãe) - (11) 99999-9999"
 
   // Relação 1-para-1 com o User
-  user              User      @relation(fields: [userId], references: [id])
-  userId            Int       @unique
+  user   User @relation(fields: [userId], references: [id])
+  userId Int  @unique
+}
+
+model EventoTimeline {
+  id             Int       @id @default(autoincrement())
+  titulo         String
+  descricao      String?
+  dataHoraInicio DateTime
+  dataHoraFim    DateTime?
+  local          String?
+  tipo           String // Ex: 'voo', 'hotel', 'reuniao', 'transfer'
+
+  viagem   Viagem @relation(fields: [viagemId], references: [id])
+  viagemId Int
+
+  despesas Despesa[] @relation("EventoDespesas")
+
+  @@index([viagemId])
 }

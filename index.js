@@ -302,29 +302,76 @@ app.get(
   }
 );
 
+app.get('/api/viagens/:id/timeline', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const eventos = await prisma.eventoTimeline.findMany({
+      where: { viagemId: Number(id) },
+      orderBy: { dataHoraInicio: 'asc' },
+    });
+    res.json(eventos);
+  } catch (error) {
+    console.error("Erro ao buscar timeline:", error);
+    res.status(500).json({ error: 'Ocorreu um erro ao buscar o itinerário.' });
+  }
+});
+
 
 // --- ROTAS DE VIAGEM (CRUD) ---
 
 // CREATE (Criar uma nova viagem)
-app.post('/api/viagens', authenticateToken, async (req, res) => { // <-- Middleware adicionado
+app.post('/api/viagens', authenticateToken, async (req, res) => {
   try {
-    // O "futuro" chegou! Pegamos o ID do usuário logado (que veio do middleware)
     const colaboradorId = req.user.id;
 
-    const dadosDaViagem = {
-      origem: req.body.origem,
-      destino: req.body.destino,
-      motivo: req.body.motivo,
-      dataIda: new Date(req.body.data_ida),
-      dataVolta: new Date(req.body.data_volta),
-      colaboradorId: colaboradorId, // <-- ID dinâmico
-      status: 'em_analise'
-    };
+    // 1. Pega os dados básicos da viagem
+    const {
+      origem,
+      destino,
+      motivo,
+      data_ida,
+      data_volta,
+      valorEstimado, // <-- Campo novo (visto no prompt)
+      eventos = []   // <-- CAMPO NOVO: Espera um array de eventos
+    } = req.body;
 
-    const novaViagem = await prisma.viagem.create({ data: dadosDaViagem });
+    // 2. Cria a viagem e seus eventos em uma única transação
+    const novaViagem = await prisma.$transaction(async (tx) => {
+      // 2a. Cria a Viagem principal
+      const viagem = await tx.viagem.create({
+        data: {
+          origem,
+          destino,
+          motivo,
+          dataIda: new Date(data_ida),
+          dataVolta: new Date(data_volta),
+          valorEstimado: valorEstimado || 0, // Garante que é um número
+          status: 'em_analise',
+          colaboradorId: colaboradorId,
+        },
+      });
+
+      // 2b. Se houver eventos, mapeia e cria todos eles
+      if (eventos.length > 0) {
+        const eventosData = eventos.map((evento) => ({
+          ...evento,
+          dataHoraInicio: new Date(evento.dataHoraInicio), // Garante que é Date
+          dataHoraFim: evento.dataHoraFim ? new Date(evento.dataHoraFim) : null,
+          viagemId: viagem.id, // Associa ao ID da viagem recém-criada
+        }));
+
+        await tx.eventoTimeline.createMany({
+          data: eventosData,
+        });
+      }
+
+      return viagem; // Retorna a viagem principal
+    });
+
     res.status(201).json(novaViagem);
+
   } catch (error) {
-    console.error("Erro ao criar viagem:", error);
+    console.error("Erro ao criar viagem com transação:", error);
     res.status(500).json({ error: 'Ocorreu um erro ao criar a viagem.' });
   }
 });
@@ -469,6 +516,49 @@ app.get(
     }
   }
 );
+
+app.get('/api/viagens/faixa-preco', authenticateToken, async (req, res) => {
+  const { destino } = req.query;
+
+  if (!destino) {
+    return res.status(400).json({ error: 'O destino é obrigatório.' });
+  }
+
+  try {
+    const agregacao = await prisma.viagem.aggregate({
+      where: {
+        destino: destino,
+        status: 'aprovado', // Considera apenas viagens que foram aprovadas
+        valorEstimado: {
+          gt: 0, // Ignora viagens sem custo
+        },
+      },
+      _avg: {
+        valorEstimado: true,
+      },
+      _min: {
+        valorEstimado: true,
+      },
+      _max: {
+        valorEstimado: true,
+      },
+      _count: {
+        id: true,
+      },
+    });
+
+    res.json({
+      avg: agregacao._avg.valorEstimado,
+      min: agregacao._min.valorEstimado,
+      max: agregacao._max.valorEstimado,
+      count: agregacao._count.id,
+    });
+
+  } catch (error) {
+    console.error("Erro ao buscar faixa de preço:", error);
+    res.status(500).json({ error: 'Ocorreu um erro ao buscar a faixa de preço.' });
+  }
+});
 
 
 // --- ROTAS DE DESPESA (CRUD) ---
@@ -620,9 +710,9 @@ app.post('/api/chatbot/ask', async (req, res) => {
   const texto = pergunta.toLowerCase();
 
   try {
-    const colaboradorId = 5;
+    const colaboradorId = 5; // (Mantendo seu ID de teste)
 
-    let resposta = "Perdão, poderia ser mais especifico? Você pode perguntar sobre 'status das viagens', 'nova viagem' ou 'política de despesas'.";
+    let resposta; // <-- Mudou: não é mais uma string
 
     if (texto.includes('status') || texto.includes('minhas viagens')) {
       const viagens = await prisma.viagem.findMany({
@@ -630,42 +720,74 @@ app.post('/api/chatbot/ask', async (req, res) => {
         orderBy: { dataIda: 'desc' }
       });
 
+      let statusList;
       if (viagens.length === 0) {
-        resposta = "Você não tem nenhuma viagem registrada no momento.";
+        statusList = "Você não tem nenhuma viagem registrada no momento.";
       } else {
-        // MUDANÇA AQUI: Mapeamento de status para um texto mais amigável
         const statusMap = {
           em_analise: 'Em Análise 🟠',
           aprovado: 'Aprovado ✅',
           reprovado: 'Reprovado ❌',
         };
-
-        // Usamos o mapa para formatar a lista
-        const statusList = viagens
+        statusList = viagens
           .map(v => `- Viagem para ${v.destino}: ${statusMap[v.status] || v.status}`)
           .join('\n');
-
-        resposta = `Claro! Aqui está o status das suas viagens:\n${statusList}`;
       }
-    }
-    else if (texto.includes('nova') && texto.includes('viagem')) {
-      resposta = "Para criar uma nova viagem, clique no menu 'Nova Viagem' ao lado ou no botão azul no topo do Dashboard. ✨";
-    }
-    else if (texto.includes('política') || texto.includes('regras') || texto.includes('despesa')) {
-      resposta = "Nossa política de viagens corporativas permite um adiantamento de até R$ 500,00. As despesas com alimentação têm um teto diário de R$ 120,00. Lembre-se de guardar todos os comprovantes!";
-    }
-    else if (texto.includes('ajuda') || texto.includes('socorro')) {
-      resposta = "Estou aqui para ajudar! Você pode me perguntar sobre o status das suas viagens, como criar uma nova solicitação ou sobre as políticas de despesas da empresa.";
-    }
-    else if (texto.includes('oi') || texto.includes('olá') || texto.includes('bom dia')) {
-      resposta = "Olá! 👋 Como posso te ajudar com suas viagens hoje?";
+
+      // AÇÃO: Mostrar texto
+      resposta = { 
+        action: 'show_text', 
+        payload: { message: `Claro! Aqui está o status das suas viagens:\n${statusList}` } 
+      };
+
+    } else if (texto.includes('nova') && texto.includes('viagem')) {
+
+      // AÇÃO: Navegar
+      resposta = { 
+        action: 'navigate', 
+        payload: { to: '/app/novaviagem' } 
+      };
+
+    } else if (texto.includes('histórico') || texto.includes('viagens passadas')) {
+
+      // AÇÃO: Navegar
+      resposta = { 
+        action: 'navigate', 
+        payload: { to: '/app/historico' } 
+      };
+
+    } else if (texto.includes('política') || texto.includes('regras') || texto.includes('despesa')) {
+
+      // AÇÃO: Mostrar texto
+      resposta = { 
+        action: 'show_text', 
+        payload: { message: "Nossa política de viagens corporativas permite um adiantamento de até R$ 500,00. As despesas com alimentação têm um teto diário de R$ 120,00. Lembre-se de guardar todos os comprovantes!" }
+      };
+
+    } else if (texto.includes('oi') || texto.includes('olá') || texto.includes('bom dia')) {
+
+      // AÇÃO: Mostrar texto
+      resposta = {
+        action: 'show_text',
+        payload: { message: "Olá! 👋 Como posso te ajudar com suas viagens hoje?" }
+      };
+
+    } else {
+      // AÇÃO PADRÃO: Mostrar texto de fallback
+      resposta = {
+        action: 'show_text',
+        payload: { message: "Perdão, não entendi. Você pode perguntar sobre 'status das viagens', 'nova viagem' ou 'política de despesas'." }
+      };
     }
 
-    res.json({ resposta });
+    res.json(resposta); // <-- MUDANÇA IMPORTANTE: Envia o objeto de ação diretamente
 
   } catch (error) {
     console.error('Erro no endpoint do chatbot:', error);
-    res.status(500).json({ resposta: "Ocorreu um erro interno ao processar sua pergunta." });
+    res.status(500).json({ 
+      action: 'show_text', 
+      payload: { message: "Desculpe, não consegui me conectar. Tente novamente." }
+    });
   }
 });
 
