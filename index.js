@@ -807,6 +807,6 @@ app.get('/api/debug-viagens', async (req, res) => {
 });
 
 
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Servidor rodando na porta http://localhost:${PORT}`);
 });
