@@ -97,6 +97,7 @@ model ConviteVisitante {
 
   visitanteUser   User? @relation(fields: [visitanteUserId], references: [id])
   visitanteUserId Int?  @unique
+  expiresAt       DateTime
 }
 
 // 4. ADICIONAMOS A NOVA TABELA DE PERFIL DE VISITANTE

@@ -38,17 +38,17 @@ const allowedOrigins = [
 ].filter(Boolean);
 
 const corsOptions = {
-    origin: function (origin, callback) {
-      // Permite se a origem estiver na lista ou se for uma requisição de servidor (sem 'origin')
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        // Log para debug no servidor
-        console.error('CORS BLOCKED:', origin);
-        callback(new Error('Not allowed by CORS'));
-      }
-    },
-    credentials: true, // Importante para o envio do token JWT
+  origin: function (origin, callback) {
+    // Permite se a origem estiver na lista ou se for uma requisição de servidor (sem 'origin')
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      // Log para debug no servidor
+      console.error('CORS BLOCKED:', origin);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true, // Importante para o envio do token JWT
 };
 
 app.use(cors(corsOptions));
@@ -175,6 +175,12 @@ app.post('/api/auth/visitante/register', async (req, res) => {
     if (!convite || convite.foiUsado) {
       return res.status(403).json({ error: 'Convite inválido ou já utilizado.' });
     }
+
+    // NOVO CHECK DE EXPIRAÇÃO
+    if (convite.expiresAt < new Date()) {
+      return res.status(403).json({ error: 'Convite expirado.' });
+    }
+
     if (convite.email !== email || convite.cpf !== cpf) {
       return res.status(403).json({ error: 'Os dados (Email ou CPF) não correspondem ao convite.' });
     }
@@ -477,6 +483,7 @@ app.post(
 
       // 3. Gera um token único (ex: 'WkYq9E-4P2a_25-HS1-tP')
       const token = nanoid(21);
+      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 dias
 
       // 4. Cria o convite no banco
       const novoConvite = await prisma.conviteVisitante.create({
@@ -485,6 +492,7 @@ app.post(
           email: email,
           cpf: cpf,
           viagemId: Number(viagemId),
+          expiresAt: expiresAt,
         }
       });
 
@@ -735,32 +743,32 @@ app.post('/api/chatbot/ask', async (req, res) => {
       }
 
       // AÇÃO: Mostrar texto
-      resposta = { 
-        action: 'show_text', 
-        payload: { message: `Claro! Aqui está o status das suas viagens:\n${statusList}` } 
+      resposta = {
+        action: 'show_text',
+        payload: { message: `Claro! Aqui está o status das suas viagens:\n${statusList}` }
       };
 
     } else if (texto.includes('nova') && texto.includes('viagem')) {
 
       // AÇÃO: Navegar
-      resposta = { 
-        action: 'navigate', 
-        payload: { to: '/app/novaviagem' } 
+      resposta = {
+        action: 'navigate',
+        payload: { to: '/app/novaviagem' }
       };
 
     } else if (texto.includes('histórico') || texto.includes('viagens passadas')) {
 
       // AÇÃO: Navegar
-      resposta = { 
-        action: 'navigate', 
-        payload: { to: '/app/historico' } 
+      resposta = {
+        action: 'navigate',
+        payload: { to: '/app/historico' }
       };
 
     } else if (texto.includes('política') || texto.includes('regras') || texto.includes('despesa')) {
 
       // AÇÃO: Mostrar texto
-      resposta = { 
-        action: 'show_text', 
+      resposta = {
+        action: 'show_text',
         payload: { message: "Nossa política de viagens corporativas permite um adiantamento de até R$ 500,00. As despesas com alimentação têm um teto diário de R$ 120,00. Lembre-se de guardar todos os comprovantes!" }
       };
 
@@ -784,8 +792,8 @@ app.post('/api/chatbot/ask', async (req, res) => {
 
   } catch (error) {
     console.error('Erro no endpoint do chatbot:', error);
-    res.status(500).json({ 
-      action: 'show_text', 
+    res.status(500).json({
+      action: 'show_text',
       payload: { message: "Desculpe, não consegui me conectar. Tente novamente." }
     });
   }
