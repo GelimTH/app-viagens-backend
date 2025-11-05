@@ -273,13 +273,14 @@ app.get(
   authorizeRole(['VISITANTE']),
   async (req, res) => {
     try {
-      // A lógica correta é buscar o CONVITE que pertence ao usuário logado
+      // --- LÓGICA CORRIGIDA ---
+      // 1. Busca o convite que ESTE usuário usou
       const convite = await prisma.conviteVisitante.findFirst({
         where: { visitanteUserId: req.user.id }, // Busca pelo ID do usuário
         include: {
-          viagem: {
+          viagem: { // 2. Inclui a viagem do convite
             include: {
-              colaborador: true, // Pega o gestor
+              colaborador: true, // 3. Inclui o gestor que criou a viagem
             },
           },
         },
@@ -289,12 +290,13 @@ app.get(
         console.log(`Nenhuma viagem encontrada para o visitante ID: ${req.user.id}`);
         return res.status(404).json({ error: 'Viagem não encontrada para este visitante.' });
       }
-
-      // Busca o perfil do visitante separado
+      
+      // 4. Busca o perfil do visitante separado
       const perfil = await prisma.profileVisitante.findUnique({
         where: { userId: req.user.id },
       });
 
+      // 5. Retorna os dados que a página precisa
       res.json({
         viagem: convite.viagem,
         perfil: perfil,
