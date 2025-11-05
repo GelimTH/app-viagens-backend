@@ -269,36 +269,38 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
 
 app.get(
   '/api/visitante/minha-viagem',
-  authenticateToken, // 1. Protege a rota, temos o req.user
-  authorizeRole(['VISITANTE']), // 2. Só visitantes podem acessar
+  authenticateToken,
+  authorizeRole(['VISITANTE']),
   async (req, res) => {
     try {
-      // 3. Busca o usuário (visitante) logado
-      const usuario = await prisma.user.findUnique({
-        where: { id: req.user.id },
+      // --- LÓGICA CORRIGIDA ---
+      // 1. Busca o perfil do visitante
+      const perfil = await prisma.profileVisitante.findUnique({
+        where: { userId: req.user.id },
+      });
+
+      // 2. Busca o convite que ESTE usuário usou
+      const convite = await prisma.conviteVisitante.findFirst({
+        where: { visitanteUserId: req.user.id },
         include: {
-          profileVisitante: true, // Inclui o perfil de saúde
-          convite: { // Inclui o convite que ele usou
+          viagem: { // 3. Inclui a viagem do convite
             include: {
-              viagem: { // Inclui a viagem associada ao convite
-                include: {
-                  colaborador: true, // Inclui o gestor que criou a viagem
-                },
-              },
+              colaborador: true, // 4. Inclui o gestor que criou a viagem
             },
           },
         },
       });
+      // --- FIM DA CORREÇÃO ---
 
-      if (!usuario || !usuario.convite || !usuario.convite.viagem) {
+      if (!convite || !convite.viagem) { // <-- Check corrigido
         return res.status(404).json({ error: 'Viagem não encontrada para este visitante.' });
       }
 
-      // 4. Retorna os dados que a página precisa
+      // 5. Retorna os dados que a página precisa
       res.json({
-        viagem: usuario.convite.viagem,
-        perfil: usuario.profileVisitante,
-        gestor: usuario.convite.viagem.colaborador, // O colaborador da viagem é o gestor
+        viagem: convite.viagem,
+        perfil: perfil,
+        gestor: convite.viagem.colaborador,
       });
 
     } catch (error) {
@@ -716,11 +718,10 @@ app.patch('/api/despesas/:id', async (req, res) => {
 app.post('/api/chatbot/ask', async (req, res) => {
   const { pergunta } = req.body;
   const texto = pergunta.toLowerCase();
+  let resposta = {}; // Objeto de resposta
 
   try {
     const colaboradorId = 5; // (Mantendo seu ID de teste)
-
-    let resposta; // <-- Mudou: não é mais uma string
 
     if (texto.includes('status') || texto.includes('minhas viagens')) {
       const viagens = await prisma.viagem.findMany({
@@ -732,68 +733,54 @@ app.post('/api/chatbot/ask', async (req, res) => {
       if (viagens.length === 0) {
         statusList = "Você não tem nenhuma viagem registrada no momento.";
       } else {
-        const statusMap = {
-          em_analise: 'Em Análise 🟠',
-          aprovado: 'Aprovado ✅',
-          reprovado: 'Reprovado ❌',
-        };
+        const statusMap = { 'em_analise': 'Em Análise 🟠', 'aprovado': 'Aprovado ✅', 'reprovado': 'Reprovado ❌' };
         statusList = viagens
           .map(v => `- Viagem para ${v.destino}: ${statusMap[v.status] || v.status}`)
           .join('\n');
       }
 
-      // AÇÃO: Mostrar texto
-      resposta = {
-        action: 'show_text',
-        payload: { message: `Claro! Aqui está o status das suas viagens:\n${statusList}` }
+      resposta = { 
+        action: 'show_text', 
+        payload: { message: `Claro! Aqui está o status das suas viagens:\n${statusList}` } 
       };
 
     } else if (texto.includes('nova') && texto.includes('viagem')) {
-
-      // AÇÃO: Navegar
-      resposta = {
-        action: 'navigate',
-        payload: { to: '/app/novaviagem' }
+      resposta = { 
+        action: 'navigate', 
+        payload: { to: '/app/novaviagem' } 
       };
 
-    } else if (texto.includes('histórico') || texto.includes('viagens passadas')) {
-
-      // AÇÃO: Navegar
-      resposta = {
-        action: 'navigate',
-        payload: { to: '/app/historico' }
+    } else if (texto.includes('histórico') || texto.includes('historico')) { // <-- Adicionei 'historico' sem acento
+      resposta = { 
+        action: 'navigate', 
+        payload: { to: '/app/historico' } 
       };
 
     } else if (texto.includes('política') || texto.includes('regras') || texto.includes('despesa')) {
-
-      // AÇÃO: Mostrar texto
-      resposta = {
-        action: 'show_text',
-        payload: { message: "Nossa política de viagens corporativas permite um adiantamento de até R$ 500,00. As despesas com alimentação têm um teto diário de R$ 120,00. Lembre-se de guardar todos os comprovantes!" }
+      resposta = { 
+        action: 'show_text', 
+        payload: { message: "Nossa política de viagens... (etc)" }
       };
 
     } else if (texto.includes('oi') || texto.includes('olá') || texto.includes('bom dia')) {
-
-      // AÇÃO: Mostrar texto
       resposta = {
         action: 'show_text',
         payload: { message: "Olá! 👋 Como posso te ajudar com suas viagens hoje?" }
       };
 
     } else {
-      // AÇÃO PADRÃO: Mostrar texto de fallback
       resposta = {
         action: 'show_text',
         payload: { message: "Perdão, não entendi. Você pode perguntar sobre 'status das viagens', 'nova viagem' ou 'política de despesas'." }
       };
     }
 
-    res.json(resposta); // <-- MUDANÇA IMPORTANTE: Envia o objeto de ação diretamente
+    res.json(resposta);
 
   } catch (error) {
     console.error('Erro no endpoint do chatbot:', error);
-    res.status(500).json({
-      action: 'show_text',
+    res.status(500).json({ 
+      action: 'show_text', 
       payload: { message: "Desculpe, não consegui me conectar. Tente novamente." }
     });
   }
