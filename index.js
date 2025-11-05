@@ -538,9 +538,9 @@ app.get('/api/viagens/faixa-preco', authenticateToken, async (req, res) => {
     const agregacao = await prisma.viagem.aggregate({
       where: {
         destino: destino,
-        status: 'aprovado', // Considera apenas viagens que foram aprovadas
+        status: 'aprovado', 
         valorEstimado: {
-          gt: 0, // Ignora viagens sem custo
+          gt: 0, 
         },
       },
       _avg: {
@@ -569,7 +569,6 @@ app.get('/api/viagens/faixa-preco', authenticateToken, async (req, res) => {
     res.status(500).json({ error: 'Ocorreu um erro ao buscar a faixa de preço.' });
   }
 });
-
 
 // --- ROTAS DE DESPESA (CRUD) ---
 app.post('/api/despesas', async (req, res) => {
