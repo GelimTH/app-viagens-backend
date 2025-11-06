@@ -576,8 +576,11 @@ app.get('/api/viagens/faixa-preco', authenticateToken, async (req, res) => {
       _max: {
         valorEstimado: true,
       },
+      // ==================================================
+      // CORREÇÃO #1 AQUI
+      // ==================================================
       _count: {
-        id: true,
+        _all: true, // Alterado de { id: true } para { _all: true }
       },
     });
 
@@ -585,7 +588,10 @@ app.get('/api/viagens/faixa-preco', authenticateToken, async (req, res) => {
       avg: agregacao._avg.valorEstimado,
       min: agregacao._min.valorEstimado,
       max: agregacao._max.valorEstimado,
-      count: agregacao._count.id,
+      // ==================================================
+      // CORREÇÃO #2 AQUI
+      // ==================================================
+      count: agregacao._count._all, // Alterado de .id para ._all
     });
 
   } catch (error) {
