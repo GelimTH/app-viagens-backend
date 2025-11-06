@@ -554,11 +554,19 @@ app.get(
 app.get('/api/viagens/faixa-preco', authenticateToken, async (req, res) => {
   const { destino } = req.query;
 
+  // --- LOG DE DEPURAÇÃO 1 ---
+  // Vamos verificar se a rota está sendo chamada e qual destino ela recebeu.
+  console.log(`[LOG /faixa-preco] Rota chamada. Destino: ${destino}`);
+
   if (!destino) {
+    // --- LOG DE ERRO 1 ---
+    console.warn('[WARN /faixa-preco] O destino veio nulo ou indefinido.');
     return res.status(400).json({ error: 'O destino é obrigatório.' });
   }
 
   try {
+    console.log(`[LOG /faixa-preco] Executando agregação no Prisma para o destino: ${destino}`);
+    
     const agregacao = await prisma.viagem.aggregate({
       where: {
         destino: destino,
@@ -576,27 +584,32 @@ app.get('/api/viagens/faixa-preco', authenticateToken, async (req, res) => {
       _max: {
         valorEstimado: true,
       },
-      // ==================================================
-      // CORREÇÃO #1 AQUI
-      // ==================================================
       _count: {
-        _all: true, // Alterado de { id: true } para { _all: true }
+        _all: true, // Mantemos a correção anterior
       },
     });
+
+    // --- LOG DE DEPURAÇÃO 2 ---
+    // Se chegar aqui, a consulta ao banco deu certo.
+    console.log(`[LOG /faixa-preco] Agregação bem-sucedida:`, agregacao);
 
     res.json({
       avg: agregacao._avg.valorEstimado,
       min: agregacao._min.valorEstimado,
       max: agregacao._max.valorEstimado,
-      // ==================================================
-      // CORREÇÃO #2 AQUI
-      // ==================================================
-      count: agregacao._count._all, // Alterado de .id para ._all
+      count: agregacao._count._all, // Mantemos a correção anterior
     });
 
   } catch (error) {
-    console.error("Erro ao buscar faixa de preço:", error);
-    res.status(500).json({ error: 'Ocorreu um erro ao buscar a faixa de preço.' });
+    // --- LOG DE ERRO 2 (O MAIS IMPORTANTE) ---
+    // Aqui vamos capturar o erro exato do Prisma antes de enviar o 500.
+    console.error("[ERRO FATAL /faixa-preco] A consulta ao banco falhou:", error);
+    
+    // Vamos também enviar a mensagem de erro para o frontend
+    res.status(500).json({ 
+      error: 'Ocorreu um erro ao buscar a faixa de preço.',
+      detalhe: error.message // Isso enviará a mensagem de erro para o console do navegador
+    });
   }
 });
 
