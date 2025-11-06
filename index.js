@@ -237,17 +237,36 @@ app.post('/api/auth/visitante/register', async (req, res) => {
 });
 
 app.post('/api/auth/login', async (req, res) => {
-  const { email, password } = req.body;
+  // ==================================================
+  // CORREÇÃO AQUI
+  // ==================================================
+  
+  // 1. Capturamos o 'loginAs' do corpo da requisição
+  const { email, password, loginAs } = req.body; 
+  
   const user = await prisma.user.findUnique({ where: { email } });
 
   if (!user) {
     return res.status(404).json({ error: "Usuário não encontrado." });
   }
 
+  // 2. Adicionamos a lógica de verificação de 'role'
+  if (loginAs === 'colaborador' && user.role === 'VISITANTE') {
+    return res.status(403).json({ error: "Login incorreto. Visitantes devem usar a aba 'Visitante'." });
+  }
+  if (loginAs === 'visitante' && user.role !== 'VISITANTE') {
+    return res.status(403).json({ error: "Login incorreto. Colaboradores devem usar a aba 'Colaborador'." });
+  }
+  // --- Fim da Verificação ---
+
   const isPasswordValid = bcrypt.compareSync(password, user.password);
 
   if (!isPasswordValid) {
-    return res.status(401).json({ error: "Senha inválida." });
+    // 3. Mensagem de erro genérica para não vazar informações
+    const errorMsg = (loginAs === 'visitante') 
+      ? "Email ou Token de Acesso inválido." 
+      : "Email ou senha inválidos.";
+    return res.status(401).json({ error: errorMsg });
   }
 
   const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET, {
