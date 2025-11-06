@@ -421,12 +421,28 @@ app.get('/api/viagens', async (req, res) => {
   }
 });
 
-// READ (Encontrar uma viagem por ID)
+// ==================================================================
+// ROTA DO ERRO QUE VOCÊ ENVIOU (findUnique)
+// ==================================================================
 app.get('/api/viagens/:id', async (req, res) => {
   try {
     const { id } = req.params;
+
+    // --- LOG DE DEPURAÇÃO (NOVO) ---
+    // Vamos ver o que estamos recebendo como 'id'
+    console.log(`[LOG /api/viagens/:id] Rota chamada. ID recebido: ${id}`);
+
+    const idNumerico = Number(id);
+
+    // --- LOG E CORREÇÃO (NOVO) ---
+    // Se o 'id' não for um número (ex: "abc" ou "undefined"), o Number(id) vira NaN.
+    if (isNaN(idNumerico)) {
+      console.error(`[ERRO /api/viagens/:id] O ID recebido '${id}' não é um número válido.`);
+      return res.status(400).json({ error: 'ID da viagem inválido.' });
+    }
+
     const viagem = await prisma.viagem.findUnique({
-      where: { id: Number(id) },
+      where: { id: idNumerico }, // Usamos a variável validada
     });
 
     if (!viagem) {
@@ -435,7 +451,8 @@ app.get('/api/viagens/:id', async (req, res) => {
 
     res.json(viagem);
   } catch (error) {
-    console.error("Erro ao buscar viagem:", error);
+    // --- LOG DE ERRO (NOVO) ---
+    console.error(`[ERRO FATAL /api/viagens/:id] A consulta falhou:`, error);
     res.status(500).json({ error: 'Ocorreu um erro ao buscar a viagem.' });
   }
 });
@@ -551,11 +568,13 @@ app.get(
   }
 );
 
+// ==================================================================
+// ROTA DA FAIXA DE PREÇO (COM NOSSOS LOGS)
+// ==================================================================
 app.get('/api/viagens/faixa-preco', authenticateToken, async (req, res) => {
   const { destino } = req.query;
 
   // --- LOG DE DEPURAÇÃO 1 ---
-  // Vamos verificar se a rota está sendo chamada e qual destino ela recebeu.
   console.log(`[LOG /faixa-preco] Rota chamada. Destino: ${destino}`);
 
   if (!destino) {
@@ -590,7 +609,6 @@ app.get('/api/viagens/faixa-preco', authenticateToken, async (req, res) => {
     });
 
     // --- LOG DE DEPURAÇÃO 2 ---
-    // Se chegar aqui, a consulta ao banco deu certo.
     console.log(`[LOG /faixa-preco] Agregação bem-sucedida:`, agregacao);
 
     res.json({
@@ -602,16 +620,15 @@ app.get('/api/viagens/faixa-preco', authenticateToken, async (req, res) => {
 
   } catch (error) {
     // --- LOG DE ERRO 2 (O MAIS IMPORTANTE) ---
-    // Aqui vamos capturar o erro exato do Prisma antes de enviar o 500.
     console.error("[ERRO FATAL /faixa-preco] A consulta ao banco falhou:", error);
     
-    // Vamos também enviar a mensagem de erro para o frontend
     res.status(500).json({ 
       error: 'Ocorreu um erro ao buscar a faixa de preço.',
-      detalhe: error.message // Isso enviará a mensagem de erro para o console do navegador
+      detalhe: error.message 
     });
   }
 });
+
 
 // (Cole em ADV-back/index.js, junto com as outras rotas GET)
 app.get('/api/viagens/:id/comunicados', authenticateToken, async (req, res) => {
