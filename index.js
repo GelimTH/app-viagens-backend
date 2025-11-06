@@ -324,30 +324,12 @@ app.get(
   }
 );
 
-app.get('/api/viagens/:id/timeline', authenticateToken, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const eventos = await prisma.eventoTimeline.findMany({
-      where: { viagemId: Number(id) },
-      orderBy: { dataHoraInicio: 'asc' },
-    });
-    res.json(eventos);
-  } catch (error) {
-    console.error("Erro ao buscar timeline:", error);
-    res.status(500).json({ error: 'Ocorreu um erro ao buscar o itinerário.' });
-  }
-});
-
-
 // --- ROTAS DE VIAGEM (CRUD) ---
 
 // CREATE (Criar uma nova viagem)
 app.post('/api/viagens', authenticateToken, async (req, res) => {
   try {
     const colaboradorId = req.user.id;
-
-    // --- CORREÇÃO #1 ---
-    // Agora estamos lendo 'eventos' do req.body
     const {
       origem,
       destino,
@@ -355,10 +337,9 @@ app.post('/api/viagens', authenticateToken, async (req, res) => {
       data_ida,
       data_volta,
       valorEstimado,
-      eventos = [] // <-- ESTA LINHA ESTAVA FALTANDO
+      eventos = [] 
     } = req.body;
 
-    // Log para você ver no RENDER (opcional, mas recomendado)
     console.log(`(BACKEND) Criando viagem para ${destino}. Eventos recebidos: ${eventos.length}`);
 
     const novaViagem = await prisma.$transaction(async (tx) => {
@@ -376,8 +357,6 @@ app.post('/api/viagens', authenticateToken, async (req, res) => {
         },
       });
 
-      // --- CORREÇÃO #2 ---
-      // Este bloco de código inteiro estava faltando
       if (eventos.length > 0) {
         // 2. Mapeia os eventos para o formato do Prisma
         const eventosData = eventos.map((evento) => ({
@@ -395,8 +374,6 @@ app.post('/api/viagens', authenticateToken, async (req, res) => {
           data: eventosData,
         });
       }
-      // --- FIM DA CORREÇÃO #2 ---
-
       return viagem; // Retorna a viagem principal
     });
 
@@ -421,28 +398,71 @@ app.get('/api/viagens', async (req, res) => {
   }
 });
 
+
 // ==================================================================
-// ROTA DO ERRO QUE VOCÊ ENVIOU (findUnique)
+//  CORREÇÃO DE ORDEM
+//  A rota /faixa-preco (específica) DEVE vir ANTES de /:id (dinâmica)
 // ==================================================================
+app.get('/api/viagens/faixa-preco', authenticateToken, async (req, res) => {
+  const { destino } = req.query;
+
+  if (!destino) {
+    return res.status(400).json({ error: 'O destino é obrigatório.' });
+  }
+
+  try {
+    const agregacao = await prisma.viagem.aggregate({
+      where: {
+        destino: destino,
+        status: 'aprovado',
+        valorEstimado: {
+          gt: 0,
+        },
+      },
+      _avg: {
+        valorEstimado: true,
+      },
+      _min: {
+        valorEstimado: true,
+      },
+      _max: {
+        valorEstimado: true,
+      },
+      _count: {
+        _all: true, 
+      },
+    });
+
+    res.json({
+      avg: agregacao._avg.valorEstimado,
+      min: agregacao._min.valorEstimado,
+      max: agregacao._max.valorEstimado,
+      count: agregacao._count._all, 
+    });
+
+  } catch (error) {
+    console.error("[ERRO FATAL /faixa-preco] A consulta ao banco falhou:", error);
+    res.status(500).json({ 
+      error: 'Ocorreu um erro ao buscar a faixa de preço.',
+      detalhe: error.message 
+    });
+  }
+});
+
+
+// ROTA DINÂMICA (agora depois da rota específica)
 app.get('/api/viagens/:id', async (req, res) => {
   try {
     const { id } = req.params;
-
-    // --- LOG DE DEPURAÇÃO (NOVO) ---
-    // Vamos ver o que estamos recebendo como 'id'
-    console.log(`[LOG /api/viagens/:id] Rota chamada. ID recebido: ${id}`);
-
     const idNumerico = Number(id);
 
-    // --- LOG E CORREÇÃO (NOVO) ---
-    // Se o 'id' não for um número (ex: "abc" ou "undefined"), o Number(id) vira NaN.
     if (isNaN(idNumerico)) {
       console.error(`[ERRO /api/viagens/:id] O ID recebido '${id}' não é um número válido.`);
       return res.status(400).json({ error: 'ID da viagem inválido.' });
     }
 
     const viagem = await prisma.viagem.findUnique({
-      where: { id: idNumerico }, // Usamos a variável validada
+      where: { id: idNumerico }, 
     });
 
     if (!viagem) {
@@ -451,7 +471,6 @@ app.get('/api/viagens/:id', async (req, res) => {
 
     res.json(viagem);
   } catch (error) {
-    // --- LOG DE ERRO (NOVO) ---
     console.error(`[ERRO FATAL /api/viagens/:id] A consulta falhou:`, error);
     res.status(500).json({ error: 'Ocorreu um erro ao buscar a viagem.' });
   }
@@ -499,8 +518,8 @@ app.delete('/api/viagens/:id', async (req, res) => {
 // ADICIONE ESTA NOVA ROTA PARA CONVIDAR VISITANTES
 app.post(
   '/api/viagens/:id/convidar',
-  authenticateToken, // 1. Protege a rota
-  authorizeRole(['GESTOR', 'ASSESSOR_DIRETOR', 'DESENVOLVEDOR']), // 2. Só Gestor/Assessor/Dev podem convidar
+  authenticateToken, 
+  authorizeRole(['GESTOR', 'ASSESSOR_DIRETOR', 'DESENVOLVEDOR']), 
   async (req, res) => {
     const { id: viagemId } = req.params;
     const { email, cpf } = req.body;
@@ -567,68 +586,6 @@ app.get(
     }
   }
 );
-
-// ==================================================================
-// ROTA DA FAIXA DE PREÇO (COM NOSSOS LOGS)
-// ==================================================================
-app.get('/api/viagens/faixa-preco', authenticateToken, async (req, res) => {
-  const { destino } = req.query;
-
-  // --- LOG DE DEPURAÇÃO 1 ---
-  console.log(`[LOG /faixa-preco] Rota chamada. Destino: ${destino}`);
-
-  if (!destino) {
-    // --- LOG DE ERRO 1 ---
-    console.warn('[WARN /faixa-preco] O destino veio nulo ou indefinido.');
-    return res.status(400).json({ error: 'O destino é obrigatório.' });
-  }
-
-  try {
-    console.log(`[LOG /faixa-preco] Executando agregação no Prisma para o destino: ${destino}`);
-    
-    const agregacao = await prisma.viagem.aggregate({
-      where: {
-        destino: destino,
-        status: 'aprovado',
-        valorEstimado: {
-          gt: 0,
-        },
-      },
-      _avg: {
-        valorEstimado: true,
-      },
-      _min: {
-        valorEstimado: true,
-      },
-      _max: {
-        valorEstimado: true,
-      },
-      _count: {
-        _all: true, // Mantemos a correção anterior
-      },
-    });
-
-    // --- LOG DE DEPURAÇÃO 2 ---
-    console.log(`[LOG /faixa-preco] Agregação bem-sucedida:`, agregacao);
-
-    res.json({
-      avg: agregacao._avg.valorEstimado,
-      min: agregacao._min.valorEstimado,
-      max: agregacao._max.valorEstimado,
-      count: agregacao._count._all, // Mantemos a correção anterior
-    });
-
-  } catch (error) {
-    // --- LOG DE ERRO 2 (O MAIS IMPORTANTE) ---
-    console.error("[ERRO FATAL /faixa-preco] A consulta ao banco falhou:", error);
-    
-    res.status(500).json({ 
-      error: 'Ocorreu um erro ao buscar a faixa de preço.',
-      detalhe: error.message 
-    });
-  }
-});
-
 
 // (Cole em ADV-back/index.js, junto com as outras rotas GET)
 app.get('/api/viagens/:id/comunicados', authenticateToken, async (req, res) => {
@@ -739,10 +696,6 @@ app.get('/api/despesas/:id', async (req, res) => {
   }
 });
 
-
-// ==================================================================
-// ADICIONE ESTE BLOCO PARA O ERRO DE "EXCLUIR" (DELETE)
-// ==================================================================
 // DELETE (Apagar uma despesa por ID) - ROTA FALTANTE
 app.delete('/api/despesas/:id', async (req, res) => {
   try {
@@ -750,10 +703,9 @@ app.delete('/api/despesas/:id', async (req, res) => {
     await prisma.despesa.delete({
       where: { id: Number(id) },
     });
-    res.status(204).send(); // 204 significa "No Content" (sucesso, sem corpo)
+    res.status(204).send(); 
   } catch (error) {
     console.error("Erro ao apagar despesa:", error);
-    // Adiciona verificação para "Record not found" (P2025 no Prisma)
     if (error.code === 'P2025') {
       return res.status(404).json({ error: 'Despesa não encontrada para deletar.' });
     }
@@ -767,7 +719,6 @@ app.patch('/api/despesas/:id', async (req, res) => {
     const { id } = req.params;
     const dadosParaAtualizar = req.body;
 
-    // Se a data for enviada, converte para o formato Date
     if (dadosParaAtualizar.data) {
       dadosParaAtualizar.data = new Date(dadosParaAtualizar.data);
     }
@@ -780,7 +731,6 @@ app.patch('/api/despesas/:id', async (req, res) => {
     res.json(despesaAtualizada);
   } catch (error) {
     console.error("Erro ao atualizar despesa:", error);
-    // Adiciona verificação para "Record not found" (P2025 no Prisma)
     if (error.code === 'P2025') {
       return res.status(404).json({ error: 'Despesa não encontrada para atualizar.' });
     }
