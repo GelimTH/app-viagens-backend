@@ -273,23 +273,21 @@ app.get(
   authorizeRole(['VISITANTE']),
   async (req, res) => {
     try {
-      // --- CORREÇÃO DA LÓGICA DE BUSCA ---
-      // 1. Busca o convite que ESTE usuário (req.user.id) usou.
       const convite = await prisma.conviteVisitante.findFirst({
-        where: { visitanteUserId: req.user.id }, // Busca pelo ID do usuário
+        where: { visitanteUserId: req.user.id },
         include: {
-          viagem: { // 2. Inclui a viagem do convite
+          viagem: {
             include: {
-              colaborador: true, // 3. Inclui o gestor
-
-              // 4. --- ESTA É A CORREÇÃO QUE FALTAVA ---
-              // Pede ao banco para INCLUIR os eventos da timeline
+              colaborador: {
+                include: {
+                  profile: true // <-- GARANTA QUE ISSO FOI ADICIONADO
+                }
+              },
               eventos: {
                 orderBy: {
-                  dataHoraInicio: 'asc' // Ordena os eventos por data
+                  dataHoraInicio: 'asc'
                 }
               }
-              // --- FIM DA CORREÇÃO ---
             },
           },
         },
@@ -300,7 +298,7 @@ app.get(
         console.log(`(BACKEND) Nenhuma viagem encontrada para o visitante ID: ${req.user.id}`);
         return res.status(404).json({ error: 'Viagem não encontrada para este visitante.' });
       }
-      
+
       // 6. Busca o perfil do visitante separado
       const perfil = await prisma.profileVisitante.findUnique({
         where: { userId: req.user.id },
@@ -341,7 +339,7 @@ app.get('/api/viagens/:id/timeline', authenticateToken, async (req, res) => {
 app.post('/api/viagens', authenticateToken, async (req, res) => {
   try {
     const colaboradorId = req.user.id;
-    
+
     // --- CORREÇÃO #1 ---
     // Agora estamos lendo 'eventos' do req.body
     const {
@@ -392,7 +390,7 @@ app.post('/api/viagens', authenticateToken, async (req, res) => {
         });
       }
       // --- FIM DA CORREÇÃO #2 ---
-      
+
       return viagem; // Retorna a viagem principal
     });
 
@@ -558,9 +556,9 @@ app.get('/api/viagens/faixa-preco', authenticateToken, async (req, res) => {
     const agregacao = await prisma.viagem.aggregate({
       where: {
         destino: destino,
-        status: 'aprovado', 
+        status: 'aprovado',
         valorEstimado: {
-          gt: 0, 
+          gt: 0,
         },
       },
       _avg: {
@@ -587,6 +585,22 @@ app.get('/api/viagens/faixa-preco', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error("Erro ao buscar faixa de preço:", error);
     res.status(500).json({ error: 'Ocorreu um erro ao buscar a faixa de preço.' });
+  }
+});
+
+// (Cole em ADV-back/index.js, junto com as outras rotas GET)
+app.get('/api/viagens/:id/comunicados', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const comunicados = await prisma.comunicado.findMany({
+      where: { viagemId: Number(id) },
+      orderBy: { createdAt: 'desc' },
+      take: 3, // Pega só os 3 últimos
+    });
+    res.json(comunicados);
+  } catch (error) {
+    console.error("Erro ao buscar comunicados:", error);
+    res.status(500).json({ error: 'Ocorreu um erro ao buscar comunicados.' });
   }
 });
 
@@ -758,26 +772,26 @@ app.post('/api/chatbot/ask', async (req, res) => {
           .join('\n');
       }
 
-      resposta = { 
-        action: 'show_text', 
-        payload: { message: `Claro! Aqui está o status das suas viagens:\n${statusList}` } 
+      resposta = {
+        action: 'show_text',
+        payload: { message: `Claro! Aqui está o status das suas viagens:\n${statusList}` }
       };
 
     } else if (texto.includes('nova') && texto.includes('viagem')) {
-      resposta = { 
-        action: 'navigate', 
-        payload: { to: '/app/novaviagem' } 
+      resposta = {
+        action: 'navigate',
+        payload: { to: '/app/novaviagem' }
       };
 
     } else if (texto.includes('histórico') || texto.includes('historico')) { // <-- Adicionei 'historico' sem acento
-      resposta = { 
-        action: 'navigate', 
-        payload: { to: '/app/historico' } 
+      resposta = {
+        action: 'navigate',
+        payload: { to: '/app/historico' }
       };
 
     } else if (texto.includes('política') || texto.includes('regras') || texto.includes('despesa')) {
-      resposta = { 
-        action: 'show_text', 
+      resposta = {
+        action: 'show_text',
         payload: { message: "Nossa política de viagens... (etc)" }
       };
 
@@ -798,8 +812,8 @@ app.post('/api/chatbot/ask', async (req, res) => {
 
   } catch (error) {
     console.error('Erro no endpoint do chatbot:', error);
-    res.status(500).json({ 
-      action: 'show_text', 
+    res.status(500).json({
+      action: 'show_text',
       payload: { message: "Desculpe, não consegui me conectar. Tente novamente." }
     });
   }

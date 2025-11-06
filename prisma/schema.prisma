@@ -62,6 +62,7 @@ model Viagem {
   despesas Despesa[]
   convites ConviteVisitante[]
   eventos  EventoTimeline[]
+  comunicados Comunicado[]
 }
 
 model Despesa {
@@ -128,6 +129,18 @@ model EventoTimeline {
   viagemId Int
 
   despesas Despesa[] @relation("EventoDespesas")
+
+  @@index([viagemId])
+}
+
+model Comunicado {
+  id        Int      @id @default(autoincrement())
+  titulo    String
+  conteudo  String
+  createdAt DateTime @default(now())
+
+  viagem    Viagem   @relation(fields: [viagemId], references: [id], onDelete: Cascade)
+  viagemId  Int
 
   @@index([viagemId])
 }
