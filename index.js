@@ -273,33 +273,42 @@ app.get(
   authorizeRole(['VISITANTE']),
   async (req, res) => {
     try {
-      // --- LÓGICA CORRIGIDA ---
+      // --- CORREÇÃO DA LÓGICA DE BUSCA ---
       // 1. Busca o convite que ESTE usuário (req.user.id) usou.
       const convite = await prisma.conviteVisitante.findFirst({
         where: { visitanteUserId: req.user.id }, // Busca pelo ID do usuário
         include: {
           viagem: { // 2. Inclui a viagem do convite
             include: {
-              colaborador: true, // 3. Inclui o gestor que criou a viagem
+              colaborador: true, // 3. Inclui o gestor
+
+              // 4. --- ESTA É A CORREÇÃO QUE FALTAVA ---
+              // Pede ao banco para INCLUIR os eventos da timeline
+              eventos: {
+                orderBy: {
+                  dataHoraInicio: 'asc' // Ordena os eventos por data
+                }
+              }
+              // --- FIM DA CORREÇÃO ---
             },
           },
         },
       });
 
-      // 4. Se não achou um convite, a viagem não existe para ele.
+      // 5. Se não achou um convite, a viagem não existe para ele.
       if (!convite || !convite.viagem) {
         console.log(`(BACKEND) Nenhuma viagem encontrada para o visitante ID: ${req.user.id}`);
         return res.status(404).json({ error: 'Viagem não encontrada para este visitante.' });
       }
       
-      // 5. Busca o perfil do visitante separado (pois é uma relação 1:1 com User)
+      // 6. Busca o perfil do visitante separado
       const perfil = await prisma.profileVisitante.findUnique({
         where: { userId: req.user.id },
       });
 
-      // 6. Retorna os dados que a página precisa
+      // 7. Retorna os dados que a página precisa
       res.json({
-        viagem: convite.viagem,
+        viagem: convite.viagem, // 'viagem' agora contém o array 'eventos'
         perfil: perfil,
         gestor: convite.viagem.colaborador,
       });
