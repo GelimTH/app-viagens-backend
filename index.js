@@ -240,10 +240,10 @@ app.post('/api/auth/login', async (req, res) => {
   // ==================================================
   // CORREÇÃO AQUI
   // ==================================================
-  
+
   // 1. Capturamos o 'loginAs' do corpo da requisição
-  const { email, password, loginAs } = req.body; 
-  
+  const { email, password, loginAs } = req.body;
+
   const user = await prisma.user.findUnique({ where: { email } });
 
   if (!user) {
@@ -263,8 +263,8 @@ app.post('/api/auth/login', async (req, res) => {
 
   if (!isPasswordValid) {
     // 3. Mensagem de erro genérica para não vazar informações
-    const errorMsg = (loginAs === 'visitante') 
-      ? "Email ou Token de Acesso inválido." 
+    const errorMsg = (loginAs === 'visitante')
+      ? "Email ou Token de Acesso inválido."
       : "Email ou senha inválidos.";
     return res.status(401).json({ error: errorMsg });
   }
@@ -356,7 +356,7 @@ app.post('/api/viagens', authenticateToken, async (req, res) => {
       data_ida,
       data_volta,
       valorEstimado,
-      eventos = [] 
+      eventos = []
     } = req.body;
 
     console.log(`(BACKEND) Criando viagem para ${destino}. Eventos recebidos: ${eventos.length}`);
@@ -460,7 +460,7 @@ app.get('/api/viagens/faixa-preco', authenticateToken, async (req, res) => {
         valorEstimado: true,
       },
       _count: {
-        _all: true, 
+        _all: true,
       },
     });
 
@@ -468,14 +468,14 @@ app.get('/api/viagens/faixa-preco', authenticateToken, async (req, res) => {
       avg: agregacao._avg.valorEstimado,
       min: agregacao._min.valorEstimado,
       max: agregacao._max.valorEstimado,
-      count: agregacao._count._all, 
+      count: agregacao._count._all,
     });
 
   } catch (error) {
     console.error("[ERRO FATAL /faixa-preco] A consulta ao banco falhou:", error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Ocorreu um erro ao buscar a faixa de preço.',
-      detalhe: error.message 
+      detalhe: error.message
     });
   }
 });
@@ -493,7 +493,7 @@ app.get('/api/viagens/:id', async (req, res) => {
     }
 
     const viagem = await prisma.viagem.findUnique({
-      where: { id: idNumerico }, 
+      where: { id: idNumerico },
     });
 
     if (!viagem) {
@@ -549,8 +549,8 @@ app.delete('/api/viagens/:id', async (req, res) => {
 // ADICIONE ESTA NOVA ROTA PARA CONVIDAR VISITANTES
 app.post(
   '/api/viagens/:id/convidar',
-  authenticateToken, 
-  authorizeRole(['GESTOR', 'ASSESSOR_DIRETOR', 'DESENVOLVEDOR']), 
+  authenticateToken,
+  authorizeRole(['GESTOR', 'ASSESSOR_DIRETOR', 'DESENVOLVEDOR']),
   async (req, res) => {
     const { id: viagemId } = req.params;
     const { email, cpf } = req.body;
@@ -594,6 +594,38 @@ app.post(
     } catch (error) {
       console.error("Erro ao criar convite:", error);
       res.status(500).json({ error: 'Ocorreu um erro ao criar o convite.' });
+    }
+  }
+);
+
+app.post(
+  '/api/viagens/:id/comunicados',
+  authenticateToken,
+  authorizeRole(['GESTOR', 'ASSESSOR_DIRETOR', 'DESENVOLVEDOR']), // <-- Permissões
+  async (req, res) => {
+    const { id: viagemId } = req.params;
+    const { titulo, conteudo } = req.body;
+
+    if (!titulo || !conteudo) {
+      return res.status(400).json({ error: 'Título e Conteúdo são obrigatórios.' });
+    }
+
+    try {
+      const novoComunicado = await prisma.comunicado.create({
+        data: {
+          titulo,
+          conteudo,
+          viagemId: Number(viagemId),
+          // O schema não pede quem criou, mas se pedisse,
+          // adicionaríamos: colaboradorId: req.user.id
+        }
+      });
+
+      res.status(201).json(novoComunicado);
+
+    } catch (error) {
+      console.error("Erro ao criar comunicado:", error);
+      res.status(500).json({ error: 'Ocorreu um erro ao criar o comunicado.' });
     }
   }
 );
@@ -734,7 +766,7 @@ app.delete('/api/despesas/:id', async (req, res) => {
     await prisma.despesa.delete({
       where: { id: Number(id) },
     });
-    res.status(204).send(); 
+    res.status(204).send();
   } catch (error) {
     console.error("Erro ao apagar despesa:", error);
     if (error.code === 'P2025') {
