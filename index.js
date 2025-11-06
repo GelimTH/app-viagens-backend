@@ -274,7 +274,7 @@ app.get(
   async (req, res) => {
     try {
       // --- LÓGICA CORRIGIDA ---
-      // 1. Busca o convite que ESTE usuário usou
+      // 1. Busca o convite que ESTE usuário (req.user.id) usou.
       const convite = await prisma.conviteVisitante.findFirst({
         where: { visitanteUserId: req.user.id }, // Busca pelo ID do usuário
         include: {
@@ -286,17 +286,18 @@ app.get(
         },
       });
 
+      // 4. Se não achou um convite, a viagem não existe para ele.
       if (!convite || !convite.viagem) {
-        console.log(`Nenhuma viagem encontrada para o visitante ID: ${req.user.id}`);
+        console.log(`(BACKEND) Nenhuma viagem encontrada para o visitante ID: ${req.user.id}`);
         return res.status(404).json({ error: 'Viagem não encontrada para este visitante.' });
       }
       
-      // 4. Busca o perfil do visitante separado
+      // 5. Busca o perfil do visitante separado (pois é uma relação 1:1 com User)
       const perfil = await prisma.profileVisitante.findUnique({
         where: { userId: req.user.id },
       });
 
-      // 5. Retorna os dados que a página precisa
+      // 6. Retorna os dados que a página precisa
       res.json({
         viagem: convite.viagem,
         perfil: perfil,
@@ -331,21 +332,24 @@ app.get('/api/viagens/:id/timeline', authenticateToken, async (req, res) => {
 app.post('/api/viagens', authenticateToken, async (req, res) => {
   try {
     const colaboradorId = req.user.id;
-
-    // 1. Pega os dados básicos da viagem
+    
+    // --- CORREÇÃO #1 ---
+    // Agora estamos lendo 'eventos' do req.body
     const {
       origem,
       destino,
       motivo,
       data_ida,
       data_volta,
-      valorEstimado, // <-- Campo novo (visto no prompt)
-      eventos = []   // <-- CAMPO NOVO: Espera um array de eventos
+      valorEstimado,
+      eventos = [] // <-- ESTA LINHA ESTAVA FALTANDO
     } = req.body;
 
-    // 2. Cria a viagem e seus eventos em uma única transação
+    // Log para você ver no RENDER (opcional, mas recomendado)
+    console.log(`(BACKEND) Criando viagem para ${destino}. Eventos recebidos: ${eventos.length}`);
+
     const novaViagem = await prisma.$transaction(async (tx) => {
-      // 2a. Cria a Viagem principal
+      // 1. Cria a Viagem principal
       const viagem = await tx.viagem.create({
         data: {
           origem,
@@ -353,26 +357,33 @@ app.post('/api/viagens', authenticateToken, async (req, res) => {
           motivo,
           dataIda: new Date(data_ida),
           dataVolta: new Date(data_volta),
-          valorEstimado: valorEstimado || 0, // Garante que é um número
+          valorEstimado: valorEstimado || 0,
           status: 'em_analise',
           colaboradorId: colaboradorId,
         },
       });
 
-      // 2b. Se houver eventos, mapeia e cria todos eles
+      // --- CORREÇÃO #2 ---
+      // Este bloco de código inteiro estava faltando
       if (eventos.length > 0) {
+        // 2. Mapeia os eventos para o formato do Prisma
         const eventosData = eventos.map((evento) => ({
-          ...evento,
-          dataHoraInicio: new Date(evento.dataHoraInicio), // Garante que é Date
+          titulo: evento.titulo,
+          descricao: evento.descricao,
+          dataHoraInicio: new Date(evento.dataHoraInicio),
           dataHoraFim: evento.dataHoraFim ? new Date(evento.dataHoraFim) : null,
-          viagemId: viagem.id, // Associa ao ID da viagem recém-criada
+          local: evento.local,
+          tipo: evento.tipo,
+          viagemId: viagem.id, // Associa o evento à viagem
         }));
 
+        // 3. Cria todos os eventos de uma vez
         await tx.eventoTimeline.createMany({
           data: eventosData,
         });
       }
-
+      // --- FIM DA CORREÇÃO #2 ---
+      
       return viagem; // Retorna a viagem principal
     });
 
