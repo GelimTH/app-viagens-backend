@@ -63,6 +63,7 @@ model Viagem {
   convites ConviteVisitante[]
   eventos  EventoTimeline[]
   comunicados Comunicado[]
+  hotelInfo   HotelInfo?
 }
 
 model Despesa {
@@ -143,4 +144,18 @@ model Comunicado {
   viagemId  Int
 
   @@index([viagemId])
+}
+
+model HotelInfo {
+  id             Int     @id @default(autoincrement())
+  nomeHotel      String
+  endereco       String
+  checkIn        DateTime
+  checkOut       DateTime
+  horarioCafe    String? // Ex: "06:00 - 10:00"
+  servicosInclusos String? // Ex: "Wi-Fi, Academia"
+  eventosMissao  String? // Ex: "Jantar de networking dia 12"
+
+  viagem    Viagem  @relation(fields: [viagemId], references: [id], onDelete: Cascade)
+  viagemId  Int     @unique // Cada viagem só tem um hotel info
 }

@@ -287,6 +287,12 @@ app.get(
                 orderBy: {
                   dataHoraInicio: 'asc'
                 }
+              },
+              hotelInfo: true, // <-- ADICIONADO
+              comunicados: { // <-- ADICIONADO
+                orderBy: {
+                  createdAt: 'desc'
+                }
               }
             },
           },
