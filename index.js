@@ -533,16 +533,66 @@ app.patch('/api/viagens/:id', async (req, res) => {
 });
 
 // DELETE (Apagar uma viagem por ID)
-app.delete('/api/viagens/:id', async (req, res) => {
+app.delete('/api/viagens/:id', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  const numericId = Number(id);
+
+  if (isNaN(numericId)) {
+    return res.status(400).json({ error: 'ID da missão inválido.' });
+  }
+
   try {
-    const { id } = req.params;
-    await prisma.viagem.delete({
-      where: { id: Number(id) },
+    // Usamos uma transação para garantir que todos os dados relacionados
+    // sejam excluídos antes da missão principal.
+    await prisma.$transaction(async (tx) => {
+      // 1. Excluir Despesas (que dependem de Viagem)
+      await tx.despesa.deleteMany({
+        where: { viagemId: numericId },
+      });
+
+      // 2. Excluir Eventos da Timeline (que dependem de Viagem)
+      await tx.eventoTimeline.deleteMany({
+        where: { viagemId: numericId },
+      });
+
+      // 3. Excluir Convites de Visitantes (que dependem de Viagem)
+      await tx.conviteVisitante.deleteMany({
+        where: { viagemId: numericId },
+      });
+
+      // 4. (Opcional, mas seguro) Excluir HotelInfo
+      // Embora seja CASCADE, excluir manualmente no Prisma é mais explícito.
+      await tx.hotelInfo.deleteMany({
+        where: { viagemId: numericId },
+      });
+
+      // 5. (Opcional, mas seguro) Excluir Comunicados
+      await tx.comunicado.deleteMany({
+        where: { viagemId: numericId },
+      });
+
+      // 6. Finalmente, excluir a Missão principal
+      await tx.viagem.delete({
+        where: { id: numericId },
+      });
     });
-    res.status(204).send();
+
+    res.status(204).send(); // Sucesso (Sem conteúdo)
+  
   } catch (error) {
-    console.error("Erro ao apagar viagem:", error);
-    res.status(500).json({ error: 'Ocorreu um erro ao apagar a viagem.' });
+    console.error("Erro ao apagar missão e seus dados relacionados:", error);
+    
+    let userMessage = 'Ocorreu um erro ao apagar a missão.';
+    
+    // Se o erro for um P2025, significa que a viagem já não existia.
+    if (error.code === 'P2025') {
+      userMessage = 'A missão que você tentou apagar não foi encontrada.';
+    } else if (error.code === 'P2003' || error.code === 'P2014') { 
+      // Erro de restrição de chave estrangeira (se algo ainda estiver bloqueando)
+       userMessage = 'Não foi possível apagar esta missão pois ela ainda possui dados vinculados.';
+    }
+
+    res.status(500).json({ error: userMessage, details: error.message });
   }
 });
 
