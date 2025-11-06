@@ -818,6 +818,71 @@ app.get('/api/debug-viagens', async (req, res) => {
   res.json(viagens);
 });
 
+// --- ROTAS DE ADMIN (NOVAS) ---
+
+// ROTA PARA BUSCAR TODOS OS USUÁRIOS
+app.get(
+  '/api/admin/users',
+  authenticateToken,
+  authorizeRole(['DESENVOLVEDOR']), // Apenas Desenvolvedores
+  async (req, res) => {
+    try {
+      const users = await prisma.user.findMany({
+        // Selecionamos apenas os campos seguros
+        select: {
+          id: true,
+          email: true,
+          fullName: true,
+          role: true,
+        },
+        orderBy: {
+          fullName: 'asc',
+        },
+      });
+      res.json(users);
+    } catch (error) {
+      console.error("[ERRO FATAL /api/admin/users]", error);
+      res.status(500).json({ error: 'Erro ao buscar usuários.' });
+    }
+  }
+);
+
+// ROTA PARA ATUALIZAR A FUNÇÃO DE UM USUÁRIO
+app.patch(
+  '/api/admin/users/:id',
+  authenticateToken,
+  authorizeRole(['DESENVOLVEDOR']), // Apenas Desenvolvedores
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { role } = req.body;
+
+      // Validação simples para garantir que a role é válida
+      const rolesValidas = ['COLABORADOR', 'GESTOR', 'ASSESSOR_DIRETOR', 'DESENVOLVEDOR', 'VISITANTE'];
+      if (!rolesValidas.includes(role)) {
+        return res.status(400).json({ error: 'Função (Role) inválida.' });
+      }
+
+      const updatedUser = await prisma.user.update({
+        where: { id: Number(id) },
+        data: { role: role },
+        select: { // Retorna só os dados seguros
+          id: true,
+          email: true,
+          fullName: true,
+          role: true,
+        }
+      });
+
+      res.json(updatedUser);
+    } catch (error) {
+      console.error(`[ERRO FATAL /api/admin/users/:id]`, error);
+      res.status(500).json({ error: 'Erro ao atualizar função do usuário.' });
+    }
+  }
+);
+
+// --- FIM DAS ROTAS DE ADMIN ---
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Servidor rodando na porta http://localhost:${PORT}`);
