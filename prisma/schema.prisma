@@ -82,6 +82,8 @@ model Despesa {
   eventoTimelineId Int?
   eventoTimeline   EventoTimeline? @relation("EventoDespesas", fields: [eventoTimelineId], references: [id])
 
+  justificativaReprovacao String?
+
   @@index([viagemId])
   @@index([eventoTimelineId])
 }

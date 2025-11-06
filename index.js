@@ -832,8 +832,26 @@ app.patch('/api/despesas/:id', async (req, res) => {
     const { id } = req.params;
     const dadosParaAtualizar = req.body;
 
+    // ==================================================
+    // NOVA LÓGICA DE RESUBMISSÃO (PARTE 2)
+    // ==================================================
+    // Se 'valor' ou 'tipo' estiverem presentes, é uma edição do usuário.
+    // Nesse caso, resetamos o status para 'pendente' e limpamos a justificativa.
+    if (dadosParaAtualizar.valor !== undefined || dadosParaAtualizar.tipo !== undefined) {
+      dadosParaAtualizar.status = 'pendente';
+      dadosParaAtualizar.justificativaReprovacao = null;
+    }
+    // ==================================================
+
+    // Se a data for enviada, converte para o formato Date
     if (dadosParaAtualizar.data) {
       dadosParaAtualizar.data = new Date(dadosParaAtualizar.data);
+    }
+    
+    // Se for uma reprovação, apenas salva a justificativa enviada.
+    // Se for uma aprovação, limpa a justificativa.
+    if (dadosParaAtualizar.status === 'aprovado') {
+      dadosParaAtualizar.justificativaReprovacao = null;
     }
 
     const despesaAtualizada = await prisma.despesa.update({
