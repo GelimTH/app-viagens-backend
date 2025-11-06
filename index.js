@@ -389,7 +389,19 @@ app.post('/api/viagens', authenticateToken, async (req, res) => {
 app.get('/api/viagens', async (req, res) => {
   try {
     const viagens = await prisma.viagem.findMany({
-      orderBy: { dataIda: 'desc' }
+      orderBy: { dataIda: 'desc' },
+      // ==================================================
+      //  CORREÇÃO AQUI
+      // ==================================================
+      // Precisamos incluir os dados do colaborador que criou a viagem
+      include: {
+        colaborador: {
+          select: {
+            fullName: true,
+            email: true // (Bom para colocar no 'title' do nome, caso precise)
+          }
+        }
+      }
     });
     res.json(viagens);
   } catch (error) {
