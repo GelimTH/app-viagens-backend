@@ -1013,7 +1013,7 @@ app.patch(
   }
 );
 
-// --- FIM DAS ROTAS DE ADMIN ---
+// --- FIM DAS ROTAS DE ADMIN --
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Servidor rodando na porta http://localhost:${PORT}`);
