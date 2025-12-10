@@ -424,12 +424,13 @@ app.get('/api/viagens/faixa-preco', authenticateToken, async (req, res) => {
 });
 
 // ROTA: Minha Viagem (CORRIGIDA: usa 'colaborador' em vez de 'gestor')
+// ROTA: Minha Viagem (Versão Final Completa - Traz Itinerário, Hotel, etc.)
 app.get('/api/viagens/minha-viagem', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
-    console.log("1. Buscando viagem para UserID:", userId);
+    console.log("1. Buscando dados completos para UserID:", userId);
 
-    // 1. Busca Convite e Viagem
+    // 1. Busca Convite e Viagem com TODOS os dados relacionados
     const convite = await prisma.conviteVisitante.findFirst({
       where: {
         visitanteUserId: userId,
@@ -438,22 +439,30 @@ app.get('/api/viagens/minha-viagem', authenticateToken, async (req, res) => {
       include: {
         viagem: {
           include: {
-            // CORREÇÃO AQUI: Mudamos de 'gestor' para 'colaborador'
+            // Traz o organizador (Colaborador)
             colaborador: {
               include: { profile: true } 
-            }
+            },
+            // --- AQUI ESTAVAM FALTANDO ESSAS LINHAS ---
+            eventos: {
+              orderBy: { dataHora: 'asc' } // Já traz ordenado por data
+            },
+            hotelInfo: true,  // Traz dados do hotel
+            comunicados: {
+              orderBy: { createdAt: 'desc' } // Comunicados mais recentes primeiro
+            },
+            despesas: true    // Traz despesas (se houver)
+            // ------------------------------------------
           }
         }
       }
     });
 
     if (!convite) {
-      console.log("Erro: Convite não encontrado.");
       return res.status(404).json({ error: 'Nenhuma viagem vinculada a este usuário.' });
     }
 
     // 2. Busca o Perfil
-    console.log("2. Buscando perfil...");
     const perfil = await prisma.profileVisitante.findUnique({
       where: { userId: userId }
     });
@@ -463,11 +472,7 @@ app.get('/api/viagens/minha-viagem', authenticateToken, async (req, res) => {
       fullName: req.user.fullName || 'Visitante' 
     };
 
-    console.log("3. Sucesso. Termos aceitos?", perfilSeguro.termosAceitos);
-
     // 3. Resposta
-    // AVISO: O Frontend espera receber um objeto chamado "gestor".
-    // Então pegamos o "colaborador" do banco e entregamos com o nome "gestor".
     res.json({
       viagem: convite.viagem,
       gestor: convite.viagem.colaborador, 
@@ -475,7 +480,7 @@ app.get('/api/viagens/minha-viagem', authenticateToken, async (req, res) => {
     });
 
   } catch (error) {
-    console.error("ERRO NO SERVIDOR:", error);
+    console.error("ERRO AO BUSCAR DADOS:", error);
     res.status(500).json({ 
       error: 'Erro interno no servidor.', 
       detalhes: error.message 
