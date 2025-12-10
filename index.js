@@ -423,65 +423,71 @@ app.get('/api/viagens/faixa-preco', authenticateToken, async (req, res) => {
   }
 });
 
+// ROTA: Minha Viagem (Versão Debug / Modo Seguro)
 app.get('/api/viagens/minha-viagem', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
-    console.log("--- ROTA MINHA VIAGEM CHAMADA ---");
-    console.log("User ID solicitante:", userId);
+    console.log(`>>> Iniciando busca para UserID: ${userId}`);
 
-    // 1. Busca o convite aceito para este usuário
-    // IMPORTANTE: Verifica se existe um convite usado vinculado a este usuário
+    // PASSO 1: Buscar o Perfil do Visitante
+    // (Aqui verificamos se o campo termosAceitos existe e funciona)
+    const perfil = await prisma.profileVisitante.findUnique({
+      where: { userId: userId }
+    });
+
+    if (!perfil) {
+      console.log("ERRO: Perfil de visitante não encontrado.");
+      // Se não tem perfil, não tem como aceitar contrato.
+      return res.status(404).json({ error: 'Perfil de visitante não encontrado.' });
+    }
+    console.log(`>>> Perfil encontrado. Termos aceitos? ${perfil.termosAceitos}`);
+
+
+    // PASSO 2: Buscar o Convite Válido
     const convite = await prisma.conviteVisitante.findFirst({
       where: {
         visitanteUserId: userId,
         foiUsado: true
-      },
+      }
+    });
+
+    if (!convite) {
+      console.log("AVISO: Usuário não tem convite vinculado.");
+      return res.status(404).json({ error: 'Você não possui uma viagem vinculada.' });
+    }
+    console.log(`>>> Convite encontrado para viagem ID: ${convite.viagemId}`);
+
+
+    // PASSO 3: Buscar a Viagem e o Gestor
+    const viagem = await prisma.viagem.findUnique({
+      where: { id: convite.viagemId },
       include: {
-        viagem: {
+        gestor: {
           include: {
-            gestor: {
-              include: {
-                profile: true // Traz dados do gestor (telefone, nome)
-              }
-            }
+            profile: true // Dados para o botão do WhatsApp
           }
         }
       }
     });
 
-    if (!convite) {
-      console.log("Nenhum convite aceito encontrado para este usuário.");
-      // Retornamos 404 se não achar viagem, mas com formato JSON correto
-      return res.status(404).json({ error: 'Você não está vinculado a nenhuma missão no momento.' });
+    if (!viagem) {
+       console.log("ERRO: O convite aponta para uma viagem que não existe mais.");
+       return res.status(404).json({ error: 'Viagem não encontrada.' });
     }
 
-    console.log("Viagem encontrada:", convite.viagem.destino);
-
-    // 2. Busca o perfil do visitante para saber se aceitou os termos
-    // Tenta achar pelo userId
-    let perfil = await prisma.profileVisitante.findUnique({
-      where: { userId: userId }
+    // SUCESSO: Monta a resposta
+    console.log(">>> Sucesso! Enviando resposta.");
+    res.json({
+      viagem: viagem,
+      gestor: viagem.gestor,
+      perfil: perfil
     });
 
-    // Se não tiver perfil (caso raro), cria um objeto 'fake' ou retorna null,
-    // mas não quebra a requisição retornando erro 400.
-    if (!perfil) {
-      console.log("Aviso: Perfil de visitante não encontrado para user:", userId);
-    }
-
-    // 3. Monta a resposta
-    const resposta = {
-      viagem: convite.viagem,
-      gestor: convite.viagem.gestor,
-      perfil: perfil // Aqui vai o campo 'termosAceitos' que adicionamos no banco
-    };
-
-    res.json(resposta);
-
   } catch (error) {
-    console.error("ERRO CRÍTICO NA ROTA MINHA-VIAGEM:", error);
-    // Retorna 500 para erro de servidor, não 400
-    res.status(500).json({ error: 'Erro interno ao buscar dados da viagem.' });
+    // Esse log vai aparecer no seu terminal se der erro 500
+    console.error("!!! ERRO 500 DETALHADO !!!");
+    console.error(error); 
+    res.status(500).json({ error: 'Erro interno no servidor. Verifique o terminal do backend.' });
   }
 });
 
