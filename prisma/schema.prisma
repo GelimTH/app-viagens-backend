@@ -113,6 +113,8 @@ model ProfileVisitante {
   alergias          String?   @db.Text
   condicoesMedicas  String?   @db.Text
   contatoEmergencia String? // Ex: "Maria (mãe) - (11) 99999-9999"
+  termosAceitos     Boolean   @default(false)
+  dataAceite        DateTime?
 
   // Relação 1-para-1 com o User
   user   User @relation(fields: [userId], references: [id])

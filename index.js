@@ -1015,6 +1015,64 @@ app.patch(
 
 // --- FIM DAS ROTAS DE ADMIN --
 
+// ROTA: Registrar aceite dos termos (Tarefa 1)
+app.patch('/api/visitante/aceitar-termos', authenticateToken, authorizeRole(['VISITANTE']), async (req, res) => {
+  try {
+    const dataAceite = new Date();
+    
+    await prisma.profileVisitante.update({
+      where: { userId: req.user.id },
+      data: {
+        termosAceitos: true,
+        dataAceite: dataAceite
+      }
+    });
+
+    res.json({ message: 'Termos aceitos com sucesso.', dataAceite });
+  } catch (error) {
+    console.error("Erro ao aceitar termos:", error);
+    res.status(500).json({ error: 'Erro ao processar o aceite.' });
+  }
+});
+
+// ROTA: Listar participantes de uma missão para o Gestor (Tarefa 3)
+app.get('/api/viagens/:id/participantes', authenticateToken, authorizeRole(['GESTOR', 'ASSESSOR_DIRETOR', 'DESENVOLVEDOR']), async (req, res) => {
+  const { id } = req.params;
+  try {
+    // Busca os convites aceitos (usuários vinculados)
+    const participantes = await prisma.conviteVisitante.findMany({
+      where: { 
+        viagemId: Number(id),
+        foiUsado: true, // Só queremos quem já se cadastrou
+        visitanteUser: { isNot: null } // Garante que tem usuário
+      },
+      include: {
+        visitanteUser: {
+          select: {
+            id: true,
+            fullName: true,
+            email: true,
+            profileVisitante: true // Traz os dados médicos e o status do contrato
+          }
+        }
+      }
+    });
+
+    // Formata a resposta para facilitar no front
+    const listaFormatada = participantes.map(p => ({
+      id: p.visitanteUser.id,
+      nome: p.visitanteUser.fullName,
+      email: p.visitanteUser.email,
+      ...p.visitanteUser.profileVisitante
+    }));
+
+    res.json(listaFormatada);
+  } catch (error) {
+    console.error("Erro ao buscar participantes:", error);
+    res.status(500).json({ error: 'Erro ao buscar participantes.' });
+  }
+});
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Servidor rodando na porta http://localhost:${PORT}`);
 });
