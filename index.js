@@ -423,14 +423,12 @@ app.get('/api/viagens/faixa-preco', authenticateToken, async (req, res) => {
   }
 });
 
-// ROTA: Minha Viagem (CORRIGIDA: usa 'colaborador' em vez de 'gestor')
-// ROTA: Minha Viagem (Versão Final Completa - Traz Itinerário, Hotel, etc.)
+// ROTA: Minha Viagem (Versão Final - Alinhada com Schema.prisma)
 app.get('/api/viagens/minha-viagem', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
-    console.log("1. Buscando dados completos para UserID:", userId);
+    console.log("1. Buscando viagem COMPLETA para UserID:", userId);
 
-    // 1. Busca Convite e Viagem com TODOS os dados relacionados
     const convite = await prisma.conviteVisitante.findFirst({
       where: {
         visitanteUserId: userId,
@@ -439,20 +437,24 @@ app.get('/api/viagens/minha-viagem', authenticateToken, async (req, res) => {
       include: {
         viagem: {
           include: {
-            // Traz o organizador (Colaborador)
+            // 1. Traz o organizador (Campo 'colaborador' confirmado no schema)
             colaborador: {
               include: { profile: true } 
             },
-            // --- AQUI ESTAVAM FALTANDO ESSAS LINHAS ---
+            
+            // 2. Traz o Itinerário ORDENADO (Campo 'dataHoraInicio' confirmado no schema)
             eventos: {
-              orderBy: { dataHora: 'asc' } // Já traz ordenado por data
+              orderBy: { dataHoraInicio: 'asc' } 
             },
-            hotelInfo: true,  // Traz dados do hotel
+            
+            // 3. Traz Comunicados recentes primeiro (Campo 'createdAt' confirmado no schema)
             comunicados: {
-              orderBy: { createdAt: 'desc' } // Comunicados mais recentes primeiro
+              orderBy: { createdAt: 'desc' }
             },
-            despesas: true    // Traz despesas (se houver)
-            // ------------------------------------------
+
+            // 4. Outros dados
+            hotelInfo: true,   
+            despesas: true       
           }
         }
       }
@@ -462,27 +464,30 @@ app.get('/api/viagens/minha-viagem', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'Nenhuma viagem vinculada a este usuário.' });
     }
 
-    // 2. Busca o Perfil
+    // Busca perfil
     const perfil = await prisma.profileVisitante.findUnique({
       where: { userId: userId }
     });
 
+    // Cria objeto seguro caso perfil não exista
     const perfilSeguro = perfil || { 
       termosAceitos: false, 
       fullName: req.user.fullName || 'Visitante' 
     };
 
-    // 3. Resposta
+    console.log("2. Sucesso! Dados recuperados e ordenados.");
+
+    // Resposta formatada para o Front
     res.json({
       viagem: convite.viagem,
-      gestor: convite.viagem.colaborador, 
+      gestor: convite.viagem.colaborador, // Mapeia 'colaborador' para 'gestor' pro front entender
       perfil: perfilSeguro
     });
 
   } catch (error) {
-    console.error("ERRO AO BUSCAR DADOS:", error);
+    console.error("ERRO DETALHADO:", error);
     res.status(500).json({ 
-      error: 'Erro interno no servidor.', 
+      error: 'Erro ao buscar dados.', 
       detalhes: error.message 
     });
   }
