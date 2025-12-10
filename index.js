@@ -286,63 +286,6 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
   res.json(req.user);
 });
 
-app.get(
-  '/api/visitante/minha-viagem',
-  authenticateToken,
-  authorizeRole(['VISITANTE']),
-  async (req, res) => {
-    try {
-      const convite = await prisma.conviteVisitante.findFirst({
-        where: { visitanteUserId: req.user.id },
-        include: {
-          viagem: {
-            include: {
-              colaborador: {
-                include: {
-                  profile: true // <-- GARANTA QUE ISSO FOI ADICIONADO
-                }
-              },
-              eventos: {
-                orderBy: {
-                  dataHoraInicio: 'asc'
-                }
-              },
-              hotelInfo: true, // <-- ADICIONADO
-              comunicados: { // <-- ADICIONADO
-                orderBy: {
-                  createdAt: 'desc'
-                }
-              }
-            },
-          },
-        },
-      });
-
-      // 5. Se não achou um convite, a viagem não existe para ele.
-      if (!convite || !convite.viagem) {
-        console.log(`(BACKEND) Nenhuma viagem encontrada para o visitante ID: ${req.user.id}`);
-        return res.status(404).json({ error: 'Viagem não encontrada para este visitante.' });
-      }
-
-      // 6. Busca o perfil do visitante separado
-      const perfil = await prisma.profileVisitante.findUnique({
-        where: { userId: req.user.id },
-      });
-
-      // 7. Retorna os dados que a página precisa
-      res.json({
-        viagem: convite.viagem, // 'viagem' agora contém o array 'eventos'
-        perfil: perfil,
-        gestor: convite.viagem.colaborador,
-      });
-
-    } catch (error) {
-      console.error("Erro ao buscar dados do visitante:", error);
-      res.status(500).json({ error: 'Ocorreu um erro ao buscar os dados da viagem.' });
-    }
-  }
-);
-
 // --- ROTAS DE VIAGEM (CRUD) ---
 
 // CREATE (Criar uma nova viagem)
@@ -480,6 +423,62 @@ app.get('/api/viagens/faixa-preco', authenticateToken, async (req, res) => {
   }
 });
 
+app.get(
+  '/api/visitante/minha-viagem',
+  authenticateToken,
+  authorizeRole(['VISITANTE']),
+  async (req, res) => {
+    try {
+      const convite = await prisma.conviteVisitante.findFirst({
+        where: { visitanteUserId: req.user.id },
+        include: {
+          viagem: {
+            include: {
+              colaborador: {
+                include: {
+                  profile: true // <-- GARANTA QUE ISSO FOI ADICIONADO
+                }
+              },
+              eventos: {
+                orderBy: {
+                  dataHoraInicio: 'asc'
+                }
+              },
+              hotelInfo: true, // <-- ADICIONADO
+              comunicados: { // <-- ADICIONADO
+                orderBy: {
+                  createdAt: 'desc'
+                }
+              }
+            },
+          },
+        },
+      });
+
+      // 5. Se não achou um convite, a viagem não existe para ele.
+      if (!convite || !convite.viagem) {
+        console.log(`(BACKEND) Nenhuma viagem encontrada para o visitante ID: ${req.user.id}`);
+        return res.status(404).json({ error: 'Viagem não encontrada para este visitante.' });
+      }
+
+      // 6. Busca o perfil do visitante separado
+      const perfil = await prisma.profileVisitante.findUnique({
+        where: { userId: req.user.id },
+      });
+
+      // 7. Retorna os dados que a página precisa
+      res.json({
+        viagem: convite.viagem, // 'viagem' agora contém o array 'eventos'
+        perfil: perfil,
+        gestor: convite.viagem.colaborador,
+      });
+
+    } catch (error) {
+      console.error("Erro ao buscar dados do visitante:", error);
+      res.status(500).json({ error: 'Ocorreu um erro ao buscar os dados da viagem.' });
+    }
+  }
+);
 
 // ROTA DINÂMICA (agora depois da rota específica)
 app.get('/api/viagens/:id', async (req, res) => {
